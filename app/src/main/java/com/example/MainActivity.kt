@@ -63,6 +63,12 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import java.util.Locale
+import java.net.URL
+import java.net.HttpURLConnection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import android.content.Intent
 
 // Sealed interface representing the application screens
 sealed interface FamilyScreen {
@@ -94,6 +100,10 @@ class MainActivity : ComponentActivity() {
 }
 
 // Helper functions for checking permissions
+fun hasCameraPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+}
+
 fun hasLocationPermissions(context: Context): Boolean {
     val fine = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val coarse = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -451,6 +461,7 @@ fun LoginScreen(
     // States for tracking system permissions inside flow
     var isLocationGranted by remember { mutableStateOf(hasLocationPermissions(context)) }
     var isGalleryGranted by remember { mutableStateOf(hasGalleryPermissions(context)) }
+    var isCameraGranted by remember { mutableStateOf(hasCameraPermission(context)) }
 
     // Create a launcher to request multiple permissions
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -463,8 +474,9 @@ fun LoginScreen(
         } else {
             perms[android.Manifest.permission.READ_EXTERNAL_STORAGE] == true
         }
+        isCameraGranted = perms[android.Manifest.permission.CAMERA] == true
 
-        if (isLocationGranted && isGalleryGranted) {
+        if (isLocationGranted && isGalleryGranted && isCameraGranted) {
             Toast.makeText(context, "Permissions acquired. Ready to login!", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Permissions declined. Family Gallery requires active access.", Toast.LENGTH_LONG).show()
@@ -475,7 +487,8 @@ fun LoginScreen(
     fun askForPermissions() {
         val permissionsToRequest = mutableListOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.CAMERA
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(android.Manifest.permission.READ_MEDIA_IMAGES)
@@ -485,9 +498,9 @@ fun LoginScreen(
         permissionLauncher.launch(permissionsToRequest.toTypedArray())
     }
 
-    // Auto-request location and gallery permission upon screen entry
+    // Auto-request location, gallery and camera permission upon screen entry
     LaunchedEffect(Unit) {
-        if (!isLocationGranted || !isGalleryGranted) {
+        if (!isLocationGranted || !isGalleryGranted || !isCameraGranted) {
             askForPermissions()
         }
     }
@@ -508,7 +521,7 @@ fun LoginScreen(
     }
 
     val isCredentialsValid = username == "gallery" && password == "gallery2026@"
-    val arePermissionsApproved = isLocationGranted && isGalleryGranted
+    val arePermissionsApproved = isLocationGranted && isGalleryGranted && isCameraGranted
 
     Box(
         modifier = Modifier
@@ -742,6 +755,41 @@ fun LoginScreen(
                             )
                         }
                     }
+
+                    // Permission row 3: Camera Access
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isCameraGranted) Icons.Default.CameraAlt else Icons.Default.Camera,
+                                contentDescription = null,
+                                tint = if (isCameraGranted) Color(0xFF81C784) else Color(0xFFE57373),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Camera Hardware Access",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                        }
+                        if (isCameraGranted) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
+                        } else {
+                            Text(
+                                text = "Grant",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { askForPermissions() }
+                                    .padding(vertical = 2.dp, horizontal = 4.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Security error display if tried and failed
@@ -756,7 +804,7 @@ fun LoginScreen(
                         )
                     } else if (!arePermissionsApproved) {
                         Text(
-                            text = "Access Denied. Ensure both Local Coordinate GPS and Gallery Permissions are approved.",
+                            text = "Access Denied. Ensure Local Coordinate GPS, Gallery, and Camera Permissions are approved.",
                             color = Color(0xFFFFB74D),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -1602,43 +1650,76 @@ fun SecretFolderScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var selectedSecretPhotoForDetail by remember { mutableStateOf<GalleryPhoto?>(null) }
 
-    // Read list of photos inside hidden Assets Folder plus predefined secret photo
-    val secretPhotos = remember {
-        val list = mutableListOf<GalleryPhoto>()
-        
-        // 1. Initial High Quality generated secret photo
-        list.add(GalleryPhoto("s1", R.drawable.img_secret_photo, "Vintage Family Roots Portrait", "Circa 1952", "Historic Studio"))
+    var secretPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-        // 2. Discover files dynamically listed inside secret Assets folder
-        try {
-            val assetFiles = context.assets.list("secret")
-            var assetCount = 0
-            assetFiles?.forEach { filename ->
-                if (filename.isNotEmpty() && !filename.startsWith(".")) {
-                    val lower = filename.lowercase(Locale.ROOT)
-                    if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
-                        val formattedTitle = filename.substringBeforeLast(".")
-                            .replace("_", " ")
-                            .replace("-", " ")
-                            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
-                        
-                        list.add(
-                            GalleryPhoto(
-                                id = "secret_asset_${assetCount++}",
-                                identifier = "file:///android_asset/secret/$filename",
-                                title = formattedTitle,
-                                date = "Hidden Archive File",
-                                location = "Central Safe Vault"
+    LaunchedEffect(Unit) {
+        isLoading = true
+        errorMessage = null
+        withContext(Dispatchers.IO) {
+            try {
+                val apiKey = "AIzaSyDV_HDWXPBlqlPsWUfQ8l_rqBkRp1Fs2r8"
+                val folderId = "17GPHOKBJIdQA8CbbYKtm4H4Ygxw07oX8"
+                val query = "'$folderId' in parents and mimeType contains 'image/'"
+                val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+                val urlString = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name)&key=$apiKey"
+                
+                val url = URL(urlString)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.doInput = true
+                
+                val responseCode = connection.responseCode
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val jsonResponse = JSONObject(responseText)
+                    val filesArray = jsonResponse.optJSONArray("files")
+                    val loadedList = mutableListOf<GalleryPhoto>()
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            val fileObj = filesArray.getJSONObject(i)
+                            val id = fileObj.getString("id")
+                            val name = fileObj.optString("name", "Untitled Secret Photo")
+                            
+                            val formattedTitle = name.substringBeforeLast(".")
+                                .replace("_", " ")
+                                .replace("-", " ")
+                                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+                            
+                            val imageUrl = "https://drive.google.com/thumbnail?id=$id&sz=w1000"
+                            
+                            loadedList.add(
+                                GalleryPhoto(
+                                    id = id,
+                                    identifier = imageUrl,
+                                    title = formattedTitle,
+                                    date = "Google Drive Cloud File",
+                                    location = "Secure Folder"
+                                )
                             )
-                        )
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        secretPhotos = loadedList
+                        isLoading = false
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        errorMessage = "Failed to load images"
+                        isLoading = false
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    errorMessage = "Failed to load images"
+                    isLoading = false
+                }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
-
-        list
     }
 
     Scaffold(
@@ -1711,7 +1792,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Encrypted folders unlocked natively from /assets/secret/",
+                        text = "Encrypted folders synced with secure Google Drive cloud",
                         color = Color(0xFFE2F3E7),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1720,7 +1801,56 @@ fun SecretFolderScreen(onBack: () -> Unit) {
             }
 
             // Beautiful clean dynamic grid displaying secure media items
-            if (secretPhotos.isEmpty()) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color(0xFF81C784),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Syncing with secure vault...",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            } else if (errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = "Error",
+                            tint = Color(0xFFE57373),
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = errorMessage ?: "Failed to load images",
+                            color = Color(0xFFE57373),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else if (secretPhotos.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1837,6 +1967,29 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
                 ) {
                     Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/file/d/${p.id}/view"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF64B5F6))
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Launch,
+                            contentDescription = "View on Drive",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("View on Drive", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
                 }
             },
             text = {
