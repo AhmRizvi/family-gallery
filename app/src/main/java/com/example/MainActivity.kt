@@ -74,6 +74,8 @@ import android.content.Intent
 import java.io.ByteArrayOutputStream
 import android.util.Base64
 import java.net.URLEncoder
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 
 // Sealed interface representing the application screens
 sealed interface FamilyScreen {
@@ -2291,6 +2293,10 @@ fun UploadScreen(
                             onClick = {
                                 val uri = selectedUri
                                 if (uri != null && !isUploading) {
+                                    if (!isNetworkAvailable(context)) {
+                                        uploadStatus = "Internet needed"
+                                        return@Button
+                                    }
                                     isUploading = true
                                     uploadStatus = "Uploading..."
                                     progressVal = 0f
@@ -2347,7 +2353,11 @@ fun UploadScreen(
                                             showSuccessDialog = true
                                         } else {
                                             progressVal = 0f
-                                            uploadStatus = "Upload failed due to connection error."
+                                            uploadStatus = if (!isNetworkAvailable(context)) {
+                                                "Internet needed"
+                                            } else {
+                                                "Upload failed due to connection error."
+                                            }
                                             delay(2000)
                                             isUploading = false
                                             uploadStatus = "Ready to upload"
@@ -2402,6 +2412,19 @@ fun UploadScreen(
                 }
             }
         }
+    }
+}
+
+// Helper utility to check active internet connection status
+fun isNetworkAvailable(context: Context): Boolean {
+    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivityManager.activeNetwork ?: return false
+    val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return when {
+        activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
+        activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
+        activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
+        else -> false
     }
 }
 
