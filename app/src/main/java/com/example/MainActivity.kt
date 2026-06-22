@@ -76,6 +76,7 @@ sealed interface FamilyScreen {
     object Login : FamilyScreen
     object Dashboard : FamilyScreen
     object SecretFolder : FamilyScreen
+    object Upload : FamilyScreen
 }
 
 // Model for gallery photos
@@ -311,12 +312,21 @@ fun FamilyGalleryApp() {
                             userCoordinates = Pair(lat, lon)
                             locationState = desc
                         },
+                        onNavigateToUpload = { screen = FamilyScreen.Upload },
                         onOpenSecret = { screen = FamilyScreen.SecretFolder },
                         onLogout = { screen = FamilyScreen.Welcome }
                     )
                 }
                 is FamilyScreen.SecretFolder -> {
                     SecretFolderScreen(
+                        onBack = { screen = FamilyScreen.Dashboard }
+                    )
+                }
+                is FamilyScreen.Upload -> {
+                    UploadScreen(
+                        onAddUpload = { uri ->
+                            pendingUploads = pendingUploads + uri
+                        },
                         onBack = { screen = FamilyScreen.Dashboard }
                     )
                 }
@@ -874,6 +884,7 @@ fun DashboardScreen(
     locationState: String,
     userCoordinates: Pair<Double, Double>?,
     onUpdateLocation: (Double, Double, String) -> Unit,
+    onNavigateToUpload: () -> Unit,
     onOpenSecret: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -1033,7 +1044,7 @@ fun DashboardScreen(
                 ) {
                     // Upload media action triggers native file explorer
                     Button(
-                        onClick = { mediaUploadLauncher.launch("image/*") },
+                        onClick = onNavigateToUpload,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFFE5A93B),
                             contentColor = Color(0xFF1E1E24)
@@ -2061,5 +2072,171 @@ fun SecretFolderScreen(onBack: () -> Unit) {
             containerColor = Color(0xFF1E1E24),
             shape = RoundedCornerShape(24.dp)
         )
+    }
+}
+
+@Composable
+fun UploadScreen(
+    onAddUpload: (Uri) -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var uploadNotificationActive by remember { mutableStateOf(false) }
+
+    val mediaUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { resultUri ->
+        if (resultUri != null) {
+            onAddUpload(resultUri)
+            uploadNotificationActive = true
+        }
+    }
+
+    if (uploadNotificationActive) {
+        AlertDialog(
+            onDismissRequest = { 
+                uploadNotificationActive = false 
+                onBack() 
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.AccessTimeFilled,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Secured Upload Initialized",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Family memories must undergo secure archival verification.\n\nIt takes 7 days to get in your apps. You can monitor progress in the 'Pending Uploads' queue inside the Dashboard.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { 
+                        uploadNotificationActive = false 
+                        onBack() 
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                ) {
+                    Text("Understood", fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF1E1E24)
+        )
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color(0xFF121214),
+        topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(
+                title = { Text("Upload Memory", color = Color.White, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF16161A),
+                    titleContentColor = Color.White
+                )
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF16161A), shape = RoundedCornerShape(24.dp))
+                    .padding(32.dp)
+            ) {
+                // Upload icon in custom circular background
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .background(Color(0xFFE5A93B).copy(alpha = 0.1f), shape = CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "Upload Icon",
+                        tint = Color(0xFFE5A93B),
+                        modifier = Modifier.size(52.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    text = "Upload to Family Archive",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Select photos from your device to preserve them securely in the family's cosmic archive.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                Button(
+                    onClick = { mediaUploadLauncher.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE5A93B),
+                        contentColor = Color(0xFF1E1E24)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .testTag("upload_image_action_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Select Photo to Upload",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
