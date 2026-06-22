@@ -133,6 +133,13 @@ fun isGpsEnabled(context: Context): Boolean {
            locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
 }
 
+fun hasAllRequiredAccess(context: Context): Boolean {
+    return hasLocationPermissions(context) &&
+           isGpsEnabled(context) &&
+           hasCameraPermission(context) &&
+           hasGalleryPermissions(context)
+}
+
 @SuppressLint("MissingPermission")
 fun fetchCurrentLocation(
     context: Context,
@@ -458,7 +465,13 @@ fun FamilyGalleryApp() {
             when (currentScreen) {
                 is FamilyScreen.Welcome -> {
                     WelcomeScreen(
-                        onExploreClick = { screen = FamilyScreen.Login }
+                        onExploreClick = {
+                            if (hasAllRequiredAccess(context)) {
+                                screen = FamilyScreen.Dashboard
+                            } else {
+                                screen = FamilyScreen.Login
+                            }
+                        }
                     )
                 }
                 is FamilyScreen.Login -> {
@@ -487,17 +500,31 @@ fun FamilyGalleryApp() {
                     )
                 }
                 is FamilyScreen.SecretFolder -> {
-                    SecretFolderScreen(
-                        onBack = { screen = FamilyScreen.Dashboard }
-                    )
+                    if (!hasAllRequiredAccess(context)) {
+                        LaunchedEffect(Unit) {
+                            screen = FamilyScreen.Dashboard
+                            Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        SecretFolderScreen(
+                            onBack = { screen = FamilyScreen.Dashboard }
+                        )
+                    }
                 }
                 is FamilyScreen.Upload -> {
-                    UploadScreen(
-                        onAddUpload = { uri ->
-                            pendingUploads = pendingUploads + uri
-                        },
-                        onBack = { screen = FamilyScreen.Dashboard }
-                    )
+                    if (!hasAllRequiredAccess(context)) {
+                        LaunchedEffect(Unit) {
+                            screen = FamilyScreen.Dashboard
+                            Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        UploadScreen(
+                            onAddUpload = { uri ->
+                                pendingUploads = pendingUploads + uri
+                            },
+                            onBack = { screen = FamilyScreen.Dashboard }
+                        )
+                    }
                 }
             }
         }
@@ -706,7 +733,7 @@ fun LoginScreen(
     }
 
     val isCredentialsValid = username == "gallery" && password == "gallery2026@"
-    val arePermissionsApproved = isLocationGranted && isGalleryGranted && isCameraGranted
+    val arePermissionsApproved = isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
 
     Box(
         modifier = Modifier
@@ -1012,8 +1039,11 @@ fun LoginScreen(
                                 Toast.makeText(context, "Invalid authorized username or password.", Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            // If permissions not given, trigger permission model request
-                            askForPermissions()
+                            if (!isLocationGranted || !isGalleryGranted || !isCameraGranted) {
+                                askForPermissions()
+                            } else if (!isGpsEnabled(context)) {
+                                showGpsDisabledDialog = true
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -1231,7 +1261,13 @@ fun DashboardScreen(
                 actions = {
                     // Lock icon leading to secret vault dialog
                     IconButton(
-                        onClick = { secretCodeDialogActive = true },
+                        onClick = {
+                            if (hasAllRequiredAccess(context)) {
+                                secretCodeDialogActive = true
+                            } else {
+                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         modifier = Modifier.testTag("secret_vault_trigger")
                     ) {
                         Icon(
@@ -1274,7 +1310,13 @@ fun DashboardScreen(
                 ) {
                     // Upload media action triggers native file explorer
                     Button(
-                        onClick = onNavigateToUpload,
+                        onClick = {
+                            if (hasAllRequiredAccess(context)) {
+                                onNavigateToUpload()
+                            } else {
+                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFFE5A93B),
                             contentColor = Color(0xFF1E1E24)
@@ -1305,7 +1347,13 @@ fun DashboardScreen(
 
                     // Quick access Secret Gallery direct link
                     OutlinedButton(
-                        onClick = { secretCodeDialogActive = true },
+                        onClick = {
+                            if (hasAllRequiredAccess(context)) {
+                                secretCodeDialogActive = true
+                            } else {
+                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = Color(0xFFE5A93B)
                         ),
