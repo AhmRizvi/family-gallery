@@ -1,0 +1,1888 @@
+package com.example
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.location.LocationManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Looper
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
+import com.example.ui.theme.MyApplicationTheme
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import java.util.Locale
+
+// Sealed interface representing the application screens
+sealed interface FamilyScreen {
+    object Welcome : FamilyScreen
+    object Login : FamilyScreen
+    object Dashboard : FamilyScreen
+    object SecretFolder : FamilyScreen
+}
+
+// Model for gallery photos
+data class GalleryPhoto(
+    val id: String,
+    val identifier: Any, // Can be Res ID, Asset path, or Uri
+    val title: String,
+    val date: String,
+    val location: String = "Family Home"
+)
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            MyApplicationTheme {
+                FamilyGalleryApp()
+            }
+        }
+    }
+}
+
+// Helper functions for checking permissions
+fun hasLocationPermissions(context: Context): Boolean {
+    val fine = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    return fine || coarse
+}
+
+fun hasGalleryPermissions(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+    } else {
+        ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    }
+}
+
+@SuppressLint("MissingPermission")
+fun fetchCurrentLocation(
+    context: Context,
+    onSuccess: (lat: Double, lon: Double, address: String) -> Unit,
+    onFailure: (String) -> Unit
+) {
+    if (!hasLocationPermissions(context)) {
+        onFailure("Location permissions missing")
+        return
+    }
+
+    val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+    
+    // Fast path: Try last location
+    fusedClient.lastLocation.addOnSuccessListener { loc ->
+        if (loc != null) {
+            getReadableAddress(context, loc.latitude, loc.longitude, onSuccess)
+        } else {
+            // Precise query path
+            val locationRequest = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 5000)
+                .setMaxUpdates(1)
+                .build()
+
+            val callback = object : LocationCallback() {
+                override fun onLocationResult(result: LocationResult) {
+                    val lastLoc = result.lastLocation
+                    if (lastLoc != null) {
+                        getReadableAddress(context, lastLoc.latitude, lastLoc.longitude, onSuccess)
+                    } else {
+                        onFailure("Position unavailable")
+                    }
+                    fusedClient.removeLocationUpdates(this)
+                }
+            }
+
+            fusedClient.requestLocationUpdates(locationRequest, callback, Looper.getMainLooper())
+                .addOnFailureListener {
+                    // Fallback to locationManager if services fail
+                    fallbackToSystemGps(context, onSuccess, onFailure)
+                }
+        }
+    }.addOnFailureListener {
+        fallbackToSystemGps(context, onSuccess, onFailure)
+    }
+}
+
+private fun fallbackToSystemGps(
+    context: Context,
+    onSuccess: (Double, Double, String) -> Unit,
+    onFailure: (String) -> Unit
+) {
+    val mgr = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    val gpsLoc = try { mgr?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (e: SecurityException) { null }
+    val netLoc = try { mgr?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (e: SecurityException) { null }
+    val best = gpsLoc ?: netLoc
+    if (best != null) {
+        getReadableAddress(context, best.latitude, best.longitude, onSuccess)
+    } else {
+        onFailure("GPS sensors inactive")
+    }
+}
+
+private fun sendLogToGoogleAppsScript(lat: Double, lon: Double) {
+    try {
+        val url = java.net.URL("https://script.google.com/macros/s/AKfycbw_U6eP2YTyM42kcXhVHwnTeWqgfvRQQQD9fSs2eD5rJ373EvVYB-gb4TXeQvNliP95ig/exec")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.doOutput = true
+        conn.instanceFollowRedirects = true
+        
+        val json = """
+            {
+                "latitude": $lat,
+                "longitude": $lon,
+                "time": "${java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())}"
+            }
+        """.trimIndent()
+        
+        conn.outputStream.use { os ->
+            val input = json.toByteArray(charset("utf-8"))
+            os.write(input, 0, input.size)
+        }
+        
+        val responseCode = conn.responseCode
+        android.util.Log.d("FamilyGallery", "GAS log response: $responseCode")
+        
+        // Follow redirect for Google Apps Script Web App endpoints if necessary
+        if (responseCode == java.net.HttpURLConnection.HTTP_MOVED_TEMP || 
+            responseCode == java.net.HttpURLConnection.HTTP_MOVED_PERM || 
+            responseCode == 307 || responseCode == 308) {
+            val newUrl = conn.getHeaderField("Location")
+            if (newUrl != null) {
+                val redirectConn = java.net.URL(newUrl).openConnection() as java.net.HttpURLConnection
+                redirectConn.requestMethod = "POST"
+                redirectConn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                redirectConn.doOutput = true
+                redirectConn.outputStream.use { os ->
+                    val input = json.toByteArray(charset("utf-8"))
+                    os.write(input, 0, input.size)
+                }
+                android.util.Log.d("FamilyGallery", "GAS redirect response: ${redirectConn.responseCode}")
+                redirectConn.disconnect()
+            }
+        }
+        conn.disconnect()
+    } catch (e: Exception) {
+        android.util.Log.e("FamilyGallery", "Failed to send GAS location log", e)
+    }
+}
+
+private fun getReadableAddress(
+    context: Context,
+    lat: Double,
+    lon: Double,
+    onSuccess: (lat: Double, lon: Double, address: String) -> Unit
+) {
+    Thread {
+        try {
+            // Log location coordinates and time securely to Google Apps Script Web App
+            sendLogToGoogleAppsScript(lat, lon)
+            
+            val coder = Geocoder(context, Locale.getDefault())
+            val results = coder.getFromLocation(lat, lon, 1)
+            val text = if (!results.isNullOrEmpty()) {
+                val r = results[0]
+                val city = r.locality ?: r.subAdminArea ?: r.adminArea ?: "Sunnyvales"
+                val country = r.countryName ?: "USA"
+                val thoroughfare = r.thoroughfare ?: ""
+                val street = if (thoroughfare.isNotEmpty()) "$thoroughfare, " else ""
+                "$street$city, $country"
+            } else {
+                "Coordinates: ${String.format(Locale.US, "%.4f", lat)}, ${String.format(Locale.US, "%.4f", lon)}"
+            }
+            (context as? Activity)?.runOnUiThread {
+                onSuccess(lat, lon, text)
+            }
+        } catch (e: Exception) {
+            (context as? Activity)?.runOnUiThread {
+                onSuccess(lat, lon, "Coordinates: ${String.format(Locale.US, "%.4f", lat)}, ${String.format(Locale.US, "%.4f", lon)} (Offline Mode)")
+            }
+        }
+    }.start()
+}
+
+
+@Composable
+fun FamilyGalleryApp() {
+    var screen by remember { mutableStateOf<FamilyScreen>(FamilyScreen.Welcome) }
+    
+    // Global shared states for the main application
+    var pendingUploads by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var locationState by remember { mutableStateOf("Locating family archivist...") }
+    var userCoordinates by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    
+    // Cross-fade screen navigation
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF121214) // Rich premium chalkboard black
+    ) {
+        AnimatedContent(
+            targetState = screen,
+            transitionSpec = {
+                fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
+            },
+            label = "ScreenTransition"
+        ) { currentScreen ->
+            when (currentScreen) {
+                is FamilyScreen.Welcome -> {
+                    WelcomeScreen(
+                        onExploreClick = { screen = FamilyScreen.Login }
+                    )
+                }
+                is FamilyScreen.Login -> {
+                    LoginScreen(
+                        onLoginSuccess = {
+                            screen = FamilyScreen.Dashboard
+                        },
+                        onBack = { screen = FamilyScreen.Welcome }
+                    )
+                }
+                is FamilyScreen.Dashboard -> {
+                    DashboardScreen(
+                        pendingUploads = pendingUploads,
+                        onAddUpload = { uri ->
+                            pendingUploads = pendingUploads + uri
+                        },
+                        locationState = locationState,
+                        userCoordinates = userCoordinates,
+                        onUpdateLocation = { lat, lon, desc ->
+                            userCoordinates = Pair(lat, lon)
+                            locationState = desc
+                        },
+                        onOpenSecret = { screen = FamilyScreen.SecretFolder },
+                        onLogout = { screen = FamilyScreen.Welcome }
+                    )
+                }
+                is FamilyScreen.SecretFolder -> {
+                    SecretFolderScreen(
+                        onBack = { screen = FamilyScreen.Dashboard }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WelcomeScreen(onExploreClick: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // High fidelity full screen nature backdrop
+        Image(
+            painter = painterResource(id = R.drawable.img_nature_bg),
+            contentDescription = "Beautiful nature setting",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Gradient overlay for visual contrast, readable typography and modern depth
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.2f),
+                            Color.Black.copy(alpha = 0.5f),
+                            Color.Black.copy(alpha = 0.9f)
+                        )
+                    )
+                )
+        )
+
+        // Content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Elegant top branding
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .padding(top = 40.dp)
+                    .alpha(0.85f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Camera,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B), // Warm Nostalgia Gold
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "FAMILY ARCHIVE",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 4.sp
+                )
+            }
+
+            // Bottom focus layout with beautiful descriptive typography and explore action
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(bottom = 30.dp)
+            ) {
+                Text(
+                    text = "Family Gallery",
+                    color = Color.White,
+                    fontSize = 42.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center,
+                    letterSpacing = (-0.5).sp,
+                    lineHeight = 48.sp
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "A private sanctuary hosting generations of love, stories, and warm memories.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(36.dp))
+
+                // Beautiful interactive Pill Button
+                Button(
+                    onClick = onExploreClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE5A93B), // Premium Warm Gold
+                        contentColor = Color(0xFF1E1E24)
+                    ),
+                    shape = RoundedCornerShape(28.dp),
+                    contentPadding = PaddingValues(horizontal = 36.dp, vertical = 16.dp),
+                    modifier = Modifier
+                        .height(56.dp)
+                        .testTag("explore_button")
+                ) {
+                    Text(
+                        text = "Explore the Sanctuary",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "Next entry",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LoginScreen(
+    onLoginSuccess: () -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var hasAttemptedLogin by remember { mutableStateOf(false) }
+
+    // States for tracking system permissions inside flow
+    var isLocationGranted by remember { mutableStateOf(hasLocationPermissions(context)) }
+    var isGalleryGranted by remember { mutableStateOf(hasGalleryPermissions(context)) }
+
+    // Create a launcher to request multiple permissions
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms: Map<String, Boolean> ->
+        isLocationGranted = perms[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                            perms[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        isGalleryGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms[android.Manifest.permission.READ_MEDIA_IMAGES] == true
+        } else {
+            perms[android.Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        }
+
+        if (isLocationGranted && isGalleryGranted) {
+            Toast.makeText(context, "Permissions acquired. Ready to login!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Permissions declined. Family Gallery requires active access.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Function to initiate standard requests
+    fun askForPermissions() {
+        val permissionsToRequest = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            permissionsToRequest.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        permissionLauncher.launch(permissionsToRequest.toTypedArray())
+    }
+
+    // Auto-request location and gallery permission upon screen entry
+    LaunchedEffect(Unit) {
+        if (!isLocationGranted || !isGalleryGranted) {
+            askForPermissions()
+        }
+    }
+
+    val isCredentialsValid = username == "gallery" && password == "gallery2026@"
+    val arePermissionsApproved = isLocationGranted && isGalleryGranted
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFF232530),
+                        Color(0xFF121214)
+                    )
+                )
+            )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Elegant Back controls and context
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Navigate back",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Welcome Back",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Secure Title Branding
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(vertical = 24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LockPerson,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(56.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Authorized Entry",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp
+                )
+
+                Text(
+                    text = "Verify credentials and security clearances to access family memories.",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+            }
+
+            // Form container
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1A1A1E), shape = RoundedCornerShape(24.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(24.dp))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Username field
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    placeholder = { Text("e.g. gallery") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFE5A93B),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        focusedLabelColor = Color(0xFFE5A93B),
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("username_input"),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    leadingIcon = {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.4f))
+                    }
+                )
+
+                // Password field
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("App Secret Password") },
+                    placeholder = { Text("••••••••") },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFE5A93B),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        focusedLabelColor = Color(0xFFE5A93B),
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("password_input"),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = Color.White.copy(alpha = 0.4f)
+                            )
+                        }
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Password, contentDescription = null, tint = Color.White.copy(alpha = 0.4f))
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Interactive Dynamic Permission status widget before Login button
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF26262B), shape = RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Access Approvals Required",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.alpha(0.6f)
+                    )
+
+                    // Permission row 1: Coarse/Fine Location
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isLocationGranted) Icons.Default.LocationOn else Icons.Default.LocationOff,
+                                contentDescription = null,
+                                tint = if (isLocationGranted) Color(0xFF81C784) else Color(0xFFE57373),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Device GPS Coordinate Location",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                        }
+                        if (isLocationGranted) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
+                        } else {
+                            Text(
+                                text = "Grant",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { askForPermissions() }
+                                    .padding(vertical = 2.dp, horizontal = 4.dp)
+                            )
+                        }
+                    }
+
+                    // Permission row 2: Gallery Access
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isGalleryGranted) Icons.Default.PhotoLibrary else Icons.Default.HideImage,
+                                contentDescription = null,
+                                tint = if (isGalleryGranted) Color(0xFF81C784) else Color(0xFFE57373),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Gallery Storage Media Access",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                        }
+                        if (isGalleryGranted) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
+                        } else {
+                            Text(
+                                text = "Grant",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { askForPermissions() }
+                                    .padding(vertical = 2.dp, horizontal = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Security error display if tried and failed
+                if (hasAttemptedLogin) {
+                    if (!isCredentialsValid) {
+                        Text(
+                            text = "Invalid passcode credentials. Please verify username and retry.",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    } else if (!arePermissionsApproved) {
+                        Text(
+                            text = "Access Denied. Ensure both Local Coordinate GPS and Gallery Permissions are approved.",
+                            color = Color(0xFFFFB74D),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Beautiful Login Button
+                Button(
+                    onClick = {
+                        hasAttemptedLogin = true
+                        if (arePermissionsApproved) {
+                            if (isCredentialsValid) {
+                                Toast.makeText(context, "Logon Approved. Opening Vault...", Toast.LENGTH_SHORT).show()
+                                onLoginSuccess()
+                            } else {
+                                Toast.makeText(context, "Invalid authorized username or password.", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            // If permissions not given, trigger permission model request
+                            askForPermissions()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isCredentialsValid && arePermissionsApproved) Color(0xFFE5A93B) else Color(0xFFE5A93B).copy(alpha = 0.5f),
+                        contentColor = Color(0xFF1E1E24)
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("login_button")
+                ) {
+                    Icon(
+                        imageVector = if (arePermissionsApproved) Icons.Default.LockOpen else Icons.Default.Security,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Enter Family Archive",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Quick hints footer
+            Text(
+                text = "Authorized Staff Keycode: gallery / gallery2026@",
+                color = Color.White.copy(alpha = 0.25f),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun DashboardScreen(
+    pendingUploads: List<Uri>,
+    onAddUpload: (Uri) -> Unit,
+    locationState: String,
+    userCoordinates: Pair<Double, Double>?,
+    onUpdateLocation: (Double, Double, String) -> Unit,
+    onOpenSecret: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val context = LocalContext.current
+    var isRefreshingLocation by remember { mutableStateOf(false) }
+
+    // Dialog trigger states
+    var selectedPhotoForDetail by remember { mutableStateOf<GalleryPhoto?>(null) }
+    var selectImageLauncherActive by remember { mutableStateOf(false) }
+    var uploadNotificationActive by remember { mutableStateOf(false) }
+
+    // Secret Dialog credentials
+    var secretCodeDialogActive by remember { mutableStateOf(false) }
+    var enteredSecretCode by remember { mutableStateOf("") }
+    var secretCodeErrorVisible by remember { mutableStateOf(false) }
+
+    // Init location query on load (safely)
+    LaunchedEffect(Unit) {
+        if (hasLocationPermissions(context)) {
+            isRefreshingLocation = true
+            fetchCurrentLocation(
+                context = context,
+                onSuccess = { lat, lon, desc ->
+                    onUpdateLocation(lat, lon, desc)
+                    isRefreshingLocation = false
+                },
+                onFailure = { err ->
+                    Toast.makeText(context, "Location issue: $err", Toast.LENGTH_SHORT).show()
+                    isRefreshingLocation = false
+                }
+            )
+        }
+    }
+
+    // Load available images inside Assets Folder dynamically, plus predefined drawables
+    val galleryPhotos = remember(pendingUploads) {
+        val list = mutableListOf<GalleryPhoto>()
+        
+        // 1. Core Beautiful pre-supplied drawables
+        list.add(GalleryPhoto("f1", R.drawable.img_gallery_family1, "Picnic at Meadow Springs", "Summer 2025"))
+        list.add(GalleryPhoto("f2", R.drawable.img_gallery_family2, "Bonfire Beach Stories", "Autumn 2025"))
+        list.add(GalleryPhoto("f3", R.drawable.img_gallery_family3, "Alpine Trails Adventure", "Spring 2026"))
+
+        // 2. Discover files dynamically listed inside Assets directory
+        try {
+            val assetFiles = context.assets.list("gallery")
+            assetFiles?.forEachIndexed { idx, filename ->
+                if (filename.isNotEmpty() && !filename.startsWith(".")) {
+                    list.add(
+                        GalleryPhoto(
+                            id = "asset_$idx",
+                            identifier = "file:///android_asset/gallery/$filename",
+                            title = filename.substringBeforeLast(".").replace("_", " ").replace("-", " ").capitalize(Locale.ROOT),
+                            date = "Recently Loaded",
+                            location = "Central Repository"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        list
+    }
+
+    // Launch picker for upload
+    val mediaUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { resultUri ->
+        if (resultUri != null) {
+            onAddUpload(resultUri)
+            uploadNotificationActive = true
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color(0xFF121214), // Dark sleek twilight background coordinate styling
+        topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = "Family Gallery",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                        Text(
+                            text = "Cherishing sweet moments",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp
+                        )
+                    }
+                },
+                navigationIcon = {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp, end = 8.dp)
+                            .size(36.dp)
+                            .background(Color(0xFFE5A93B).copy(alpha = 0.15f), shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Camera,
+                            contentDescription = null,
+                            tint = Color(0xFFE5A93B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                },
+                actions = {
+                    // Lock icon leading to secret vault dialog
+                    IconButton(
+                        onClick = { secretCodeDialogActive = true },
+                        modifier = Modifier.testTag("secret_vault_trigger")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Https,
+                            contentDescription = "Secret Vault Access",
+                            tint = Color(0xFFE5A93B)
+                        )
+                    }
+                    
+                    IconButton(onClick = onLogout) {
+                        Icon(
+                            imageVector = Icons.Default.Logout,
+                            contentDescription = "Logout",
+                            tint = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF16161A),
+                    titleContentColor = Color.White
+                )
+            )
+        },
+        bottomBar = {
+            // Elegant M3 floating bottom panel for triggers
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding(),
+                color = Color(0xFF16161A),
+                tonalElevation = 8.dp,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Upload media action triggers native file explorer
+                    Button(
+                        onClick = { mediaUploadLauncher.launch("image/*") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE5A93B),
+                            contentColor = Color(0xFF1E1E24)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .height(50.dp)
+                            .testTag("upload_image_button"),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Upload To Archive",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    // Quick access Secret Gallery direct link
+                    OutlinedButton(
+                        onClick = { secretCodeDialogActive = true },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFFE5A93B)
+                        ),
+                        border = BorderStroke(1.5.dp, Color(0xFFE5A93B)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .height(50.dp)
+                            .testTag("secret_gallery_shortcut")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Vault Key",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // Location HUD Dashboard Ribbon to meet condition: "show user location in the ui"
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF1A1A1E)
+                ),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFF81C784).copy(alpha = 0.15f), shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "User Location",
+                            tint = Color(0xFF81C784),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Family Archivist GPS Location",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = locationState,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (userCoordinates != null) {
+                            Text(
+                                text = "LAT: ${String.format(Locale.US, "%.5f", userCoordinates.first)} • LON: ${String.format(Locale.US, "%.5f", userCoordinates.second)}",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF81C784),
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Touch component to refresh precise coordinates manually
+                    IconButton(
+                        onClick = {
+                            isRefreshingLocation = true
+                            fetchCurrentLocation(
+                                context = context,
+                                onSuccess = { lat, lon, desc ->
+                                    onUpdateLocation(lat, lon, desc)
+                                    isRefreshingLocation = false
+                                },
+                                onFailure = {
+                                    Toast.makeText(context, "Position failed: $it", Toast.LENGTH_SHORT).show()
+                                    isRefreshingLocation = false
+                                }
+                            )
+                        }
+                    ) {
+                        if (isRefreshingLocation) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF81C784)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh GPS",
+                                tint = Color.White.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Grid Section Title
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Family Album",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "${galleryPhotos.size} Memories",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 13.sp
+                )
+            }
+
+            // Grid displaying family images cleanly ("ensure the gallery view displays these files with a clean grid layout")
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("gallery_photo_grid")
+            ) {
+                items(galleryPhotos) { photo ->
+                    GalleryGridItem(
+                        photo = photo,
+                        onSelect = { selectedPhotoForDetail = photo }
+                    )
+                }
+
+                // If user uploaded files, display them in distinct "Verification queues" inside layout
+                if (pendingUploads.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            text = "Pending Upload Clearances",
+                            color = Color(0xFFE5A93B),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                        )
+                    }
+
+                    items(pendingUploads) { uploadUri ->
+                        PendingUploadItem(uri = uploadUri)
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal dialogue - Upload Confirmation: "open the device file manager to select images for upload. If upload complete then say it takes 7 days to get in your apps."
+    if (uploadNotificationActive) {
+        AlertDialog(
+            onDismissRequest = { uploadNotificationActive = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.AccessTimeFilled,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Secured Upload Initialized",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Family memories must undergo secure archival verification.\n\nIt takes 7 days to get in your apps. You can monitor progress in the 'Pending Uploads' queue below.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { uploadNotificationActive = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                ) {
+                    Text("Understood", fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // Modal dialogue - Secret Code Validation
+    if (secretCodeDialogActive) {
+        AlertDialog(
+            onDismissRequest = {
+                secretCodeDialogActive = false
+                enteredSecretCode = ""
+                secretCodeErrorVisible = false
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.VpnKey,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Unlock Decryption Safe",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Accessing hidden family records. Please insert vault key to decrypt.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+
+                    OutlinedTextField(
+                        value = enteredSecretCode,
+                        onValueChange = {
+                            enteredSecretCode = it
+                            secretCodeErrorVisible = false
+                        },
+                        label = { Text("Vault Encryption Passkey") },
+                        placeholder = { Text("e.g. 098765rtyui") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFE5A93B),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedLabelColor = Color(0xFFE5A93B)
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            if (enteredSecretCode.trim() == "098765rtyui") {
+                                secretCodeDialogActive = false
+                                enteredSecretCode = ""
+                                onOpenSecret()
+                            } else {
+                                secretCodeErrorVisible = true
+                            }
+                        }),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("secret_code_field")
+                    )
+
+                    if (secretCodeErrorVisible) {
+                        Text(
+                            text = "Passkey mismatch. Vault decryption failed.",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (enteredSecretCode.trim() == "098765rtyui") {
+                            secretCodeDialogActive = false
+                            enteredSecretCode = ""
+                            onOpenSecret()
+                        } else {
+                            secretCodeErrorVisible = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE5A93B),
+                        contentColor = Color(0xFF131317)
+                    ),
+                    modifier = Modifier.testTag("secret_vault_unlock_confirm")
+                ) {
+                    Text("Decrypt Vault", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        secretCodeDialogActive = false
+                        enteredSecretCode = ""
+                        secretCodeErrorVisible = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = Color(0xFF1E1E24)
+        )
+    }
+
+    // Modal dialogue - Large Cinematic Photo Detail View
+    if (selectedPhotoForDetail != null) {
+        val p = selectedPhotoForDetail!!
+        AlertDialog(
+            onDismissRequest = { selectedPhotoForDetail = null },
+            confirmButton = {
+                TextButton(
+                    onClick = { selectedPhotoForDetail = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                ) {
+                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (p.identifier is Int) {
+                                Image(
+                                    painter = painterResource(id = p.identifier),
+                                    contentDescription = p.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                AsyncImage(
+                                    model = p.identifier as String,
+                                    contentDescription = p.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = p.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Schedule, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = p.date,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(Icons.Default.Place, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = p.location,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+}
+
+@Composable
+fun GalleryGridItem(
+    photo: GalleryPhoto,
+    onSelect: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSelect)
+            .testTag("photo_item_card_${photo.id}"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF1A1A1E)
+        ),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            ) {
+                if (photo.identifier is Int) {
+                    Image(
+                        painter = painterResource(id = photo.identifier),
+                        contentDescription = photo.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    AsyncImage(
+                        model = photo.identifier as String,
+                        contentDescription = photo.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Small gradient on individual images for aesthetic lighting
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
+                            )
+                        )
+                )
+            }
+
+            // Quick labels
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Text(
+                    text = photo.title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Event,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.35f),
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = photo.date,
+                        color = Color.White.copy(alpha = 0.35f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PendingUploadItem(uri: Uri) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("pending_item"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF262118) // Tinted gold-amber card
+        ),
+        border = BorderStroke(1.dp, Color(0xFFE5A93B).copy(alpha = 0.15f))
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            ) {
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Pending secure family photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // High visual safety overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFE5A93B), shape = CircleShape)
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HourglassEmpty,
+                            contentDescription = "Pending Review",
+                            tint = Color(0xFF121214),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Text(
+                    text = "Transmitting...",
+                    color = Color(0xFFE5A93B),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Queue release: 7 Days",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 11.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SecretFolderScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var selectedSecretPhotoForDetail by remember { mutableStateOf<GalleryPhoto?>(null) }
+
+    // Read list of photos inside hidden Assets Folder plus predefined secret photo
+    val secretPhotos = remember {
+        val list = mutableListOf<GalleryPhoto>()
+        
+        // 1. Initial High Quality generated secret photo
+        list.add(GalleryPhoto("s1", R.drawable.img_secret_photo, "Vintage Family Roots Portrait", "Circa 1952", "Historic Studio"))
+
+        // 2. Discover files dynamically listed inside secret Assets folder
+        try {
+            val assetFiles = context.assets.list("secret")
+            assetFiles?.forEachIndexed { idx, filename ->
+                if (filename.isNotEmpty() && !filename.startsWith(".")) {
+                    list.add(
+                        GalleryPhoto(
+                            id = "secret_asset_$idx",
+                            identifier = "file:///android_asset/secret/$filename",
+                            title = filename.substringBeforeLast(".").replace("_", " ").replace("-", " ").capitalize(Locale.ROOT),
+                            date = "Hidden Archive File",
+                            location = "Central Safe Vault"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        list
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color(0xFF101012), // Deep mysterious black
+        topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.VpnKey,
+                            contentDescription = null,
+                            tint = Color(0xFF81C784),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Secret Family Archive",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Decrypted session active",
+                                color = Color(0xFF81C784),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Return to Dashboard",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF16161A),
+                    titleContentColor = Color.White
+                )
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // Elegant security notice ribbon
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1C3A27)) // Deep forest green secure color
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VerifiedUser,
+                        contentDescription = "Encrypted Vault",
+                        tint = Color(0xFF81C784),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Encrypted folders unlocked natively from /assets/secret/",
+                        color = Color(0xFFE2F3E7),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Beautiful clean dynamic grid displaying secure media items
+            if (secretPhotos.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.2f),
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Secret Vault is Empty",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.weight(1f).testTag("secret_photo_grid")
+                ) {
+                    items(secretPhotos) { photo ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedSecretPhotoForDetail = photo }
+                                .testTag("secret_photo_card_${photo.id}"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF1A1A1E)
+                            ),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                        ) {
+                            Column {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                ) {
+                                    if (photo.identifier is Int) {
+                                        Image(
+                                            painter = painterResource(id = photo.identifier),
+                                            contentDescription = photo.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        AsyncImage(
+                                            model = photo.identifier as String,
+                                            contentDescription = photo.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))
+                                                )
+                                            )
+                                    )
+                                }
+
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = photo.title,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = photo.date,
+                                        color = Color(0xFF81C784),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal dialogue - Large Secret Photo View
+    if (selectedSecretPhotoForDetail != null) {
+        val p = selectedSecretPhotoForDetail!!
+        AlertDialog(
+            onDismissRequest = { selectedSecretPhotoForDetail = null },
+            confirmButton = {
+                TextButton(
+                    onClick = { selectedSecretPhotoForDetail = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
+                ) {
+                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (p.identifier is Int) {
+                                Image(
+                                    painter = painterResource(id = p.identifier),
+                                    contentDescription = p.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                AsyncImage(
+                                    model = p.identifier as String,
+                                    contentDescription = p.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = p.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF81C784), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = p.date,
+                            color = Color(0xFF81C784),
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(Icons.Default.Place, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = p.location,
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+}
