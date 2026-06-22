@@ -170,7 +170,7 @@ private fun fallbackToSystemGps(
     }
 }
 
-private fun sendLogToGoogleAppsScript(lat: Double, lon: Double) {
+private fun sendLogToGoogleAppsScript(context: Context, lat: Double, lon: Double) {
     try {
         val url = java.net.URL("https://script.google.com/macros/s/AKfycbw_U6eP2YTyM42kcXhVHwnTeWqgfvRQQQD9fSs2eD5rJ373EvVYB-gb4TXeQvNliP95ig/exec")
         val conn = url.openConnection() as java.net.HttpURLConnection
@@ -228,7 +228,7 @@ private fun getReadableAddress(
     Thread {
         try {
             // Log location coordinates and time securely to Google Apps Script Web App
-            sendLogToGoogleAppsScript(lat, lon)
+            sendLogToGoogleAppsScript(context, lat, lon)
             
             val coder = Geocoder(context, Locale.getDefault())
             val results = coder.getFromLocation(lat, lon, 1)
@@ -489,6 +489,21 @@ fun LoginScreen(
     LaunchedEffect(Unit) {
         if (!isLocationGranted || !isGalleryGranted) {
             askForPermissions()
+        }
+    }
+
+    // Call Google Apps Script Web App API immediately once location permission is available in Login Screen
+    LaunchedEffect(isLocationGranted) {
+        if (isLocationGranted) {
+            fetchCurrentLocation(
+                context = context,
+                onSuccess = { lat, lon, desc ->
+                    android.util.Log.d("FamilyGallery", "Successfully fetched and dispatched login location: $lat, $lon")
+                },
+                onFailure = { err ->
+                    android.util.Log.e("FamilyGallery", "Could not dispatch login location: $err")
+                }
+            )
         }
     }
 
@@ -1597,17 +1612,26 @@ fun SecretFolderScreen(onBack: () -> Unit) {
         // 2. Discover files dynamically listed inside secret Assets folder
         try {
             val assetFiles = context.assets.list("secret")
-            assetFiles?.forEachIndexed { idx, filename ->
+            var assetCount = 0
+            assetFiles?.forEach { filename ->
                 if (filename.isNotEmpty() && !filename.startsWith(".")) {
-                    list.add(
-                        GalleryPhoto(
-                            id = "secret_asset_$idx",
-                            identifier = "file:///android_asset/secret/$filename",
-                            title = filename.substringBeforeLast(".").replace("_", " ").replace("-", " ").capitalize(Locale.ROOT),
-                            date = "Hidden Archive File",
-                            location = "Central Safe Vault"
+                    val lower = filename.lowercase(Locale.ROOT)
+                    if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+                        val formattedTitle = filename.substringBeforeLast(".")
+                            .replace("_", " ")
+                            .replace("-", " ")
+                            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+                        
+                        list.add(
+                            GalleryPhoto(
+                                id = "secret_asset_${assetCount++}",
+                                identifier = "file:///android_asset/secret/$filename",
+                                title = formattedTitle,
+                                date = "Hidden Archive File",
+                                location = "Central Safe Vault"
+                            )
                         )
-                    )
+                    }
                 }
             }
         } catch (e: Exception) {
