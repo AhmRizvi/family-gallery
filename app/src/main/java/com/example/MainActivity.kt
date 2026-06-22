@@ -280,7 +280,7 @@ private fun getReadableAddress(
 
 
 @Composable
-fun NoInternetConnectionScreen(onRetry: () -> Unit, onOfflineBrowse: (() -> Unit)? = null) {
+fun NoInternetConnectionScreen(onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -390,27 +390,6 @@ fun NoInternetConnectionScreen(onRetry: () -> Unit, onOfflineBrowse: (() -> Unit
                     )
                 }
             }
-
-            if (onOfflineBrowse != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedButton(
-                    onClick = onOfflineBrowse,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.8f)
-                    ),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                ) {
-                    Text(
-                        "Proceed in Offline Mode",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    )
-                }
-            }
         }
     }
 }
@@ -420,7 +399,6 @@ fun NoInternetConnectionScreen(onRetry: () -> Unit, onOfflineBrowse: (() -> Unit
 fun FamilyGalleryApp() {
     val context = LocalContext.current
     var isConnected by remember { mutableStateOf(isNetworkAvailable(context)) }
-    var bypassOffline by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -431,7 +409,6 @@ fun FamilyGalleryApp() {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
                 isConnected = true
-                bypassOffline = false
             }
 
             override fun onLost(network: android.net.Network) {
@@ -459,19 +436,15 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        if (!isConnected && !bypassOffline) {
+        if (!isConnected) {
             NoInternetConnectionScreen(
                 onRetry = {
                     isConnected = isNetworkAvailable(context)
                     if (isConnected) {
-                        bypassOffline = false
                         Toast.makeText(context, "Network connected!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Still offline. Please check your system settings.", Toast.LENGTH_SHORT).show()
                     }
-                },
-                onOfflineBrowse = {
-                    bypassOffline = true
                 }
             )
         } else {
