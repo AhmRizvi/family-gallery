@@ -71,6 +71,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import android.content.Intent
+import android.provider.Settings
 import java.io.ByteArrayOutputStream
 import android.util.Base64
 import java.net.URLEncoder
@@ -124,6 +125,12 @@ fun hasGalleryPermissions(context: Context): Boolean {
     } else {
         ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
+}
+
+fun isGpsEnabled(context: Context): Boolean {
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    return locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+           locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
 }
 
 @SuppressLint("MissingPermission")
@@ -273,7 +280,173 @@ private fun getReadableAddress(
 
 
 @Composable
+fun NoInternetConnectionScreen(onRetry: () -> Unit, onOfflineBrowse: (() -> Unit)? = null) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF121214)),
+        contentAlignment = Alignment.Center
+    ) {
+        // Decorative background elements
+        Box(
+            modifier = Modifier
+                .size(300.dp)
+                .align(Alignment.TopStart)
+                .graphicsLayer {
+                    translationX = -100f
+                    translationY = -100f
+                }
+                .alpha(0.04f)
+                .background(Color(0xFFFF5252), CircleShape)
+                .blur(80.dp)
+        )
+        Box(
+            modifier = Modifier
+                .size(300.dp)
+                .align(Alignment.BottomEnd)
+                .graphicsLayer {
+                    translationX = 100f
+                    translationY = 100f
+                }
+                .alpha(0.04f)
+                .background(Color(0xFF64B5F6), CircleShape)
+                .blur(80.dp)
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .padding(32.dp)
+                .fillMaxWidth()
+                .widthIn(max = 450.dp)
+        ) {
+            // Glowing CloudOff icon panel
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(100.dp)
+                    .background(Color(0x11FF5252), CircleShape)
+                    .border(1.dp, Color(0x33FF5252), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudOff,
+                    contentDescription = "No Network Connection",
+                    tint = Color(0xFFFF5252),
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Premium Typography pairing
+            Text(
+                text = "No Internet Connection",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "The digital archivist could not establish a connection to the remote repositories. High-definition media catalog and remote cloud sync functions are currently offline.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Action: Retry Button
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF64B5F6),
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Retry Connection",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+
+            if (onOfflineBrowse != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onOfflineBrowse,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White.copy(alpha = 0.8f)
+                    ),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                ) {
+                    Text(
+                        "Proceed in Offline Mode",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
 fun FamilyGalleryApp() {
+    val context = LocalContext.current
+    var isConnected by remember { mutableStateOf(isNetworkAvailable(context)) }
+    var bypassOffline by remember { mutableStateOf(false) }
+
+    LaunchedEffect(context) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = android.net.NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                isConnected = true
+                bypassOffline = false
+            }
+
+            override fun onLost(network: android.net.Network) {
+                isConnected = isNetworkAvailable(context)
+            }
+        }
+        
+        try {
+            connectivityManager.registerNetworkCallback(request, callback)
+        } catch (e: Exception) {
+            // ignore
+        }
+        isConnected = isNetworkAvailable(context)
+    }
+
     var screen by remember { mutableStateOf<FamilyScreen>(FamilyScreen.Welcome) }
     
     // Global shared states for the main application
@@ -286,7 +459,23 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        AnimatedContent(
+        if (!isConnected && !bypassOffline) {
+            NoInternetConnectionScreen(
+                onRetry = {
+                    isConnected = isNetworkAvailable(context)
+                    if (isConnected) {
+                        bypassOffline = false
+                        Toast.makeText(context, "Network connected!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Still offline. Please check your system settings.", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onOfflineBrowse = {
+                    bypassOffline = true
+                }
+            )
+        } else {
+            AnimatedContent(
             targetState = screen,
             transitionSpec = {
                 fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
@@ -341,6 +530,8 @@ fun FamilyGalleryApp() {
         }
     }
 }
+}
+
 
 @Composable
 fun WelcomeScreen(onExploreClick: () -> Unit) {
@@ -479,6 +670,7 @@ fun LoginScreen(
     var isLocationGranted by remember { mutableStateOf(hasLocationPermissions(context)) }
     var isGalleryGranted by remember { mutableStateOf(hasGalleryPermissions(context)) }
     var isCameraGranted by remember { mutableStateOf(hasCameraPermission(context)) }
+    var showGpsDisabledDialog by remember { mutableStateOf(false) }
 
     // Create a launcher to request multiple permissions
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -525,6 +717,9 @@ fun LoginScreen(
     // Call Google Apps Script Web App API immediately once location permission is available in Login Screen
     LaunchedEffect(isLocationGranted) {
         if (isLocationGranted) {
+            if (!isGpsEnabled(context)) {
+                showGpsDisabledDialog = true
+            }
             fetchCurrentLocation(
                 context = context,
                 onSuccess = { lat, lon, desc ->
@@ -882,6 +1077,57 @@ fun LoginScreen(
             )
         }
     }
+
+    if (showGpsDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = { showGpsDisabledDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.LocationOff,
+                    contentDescription = null,
+                    tint = Color(0xFFE57373),
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "GPS Services Required",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Your device's GPS or Location Services are currently turned off. To locate the family archivist and coordinates, please turn on GPS/Location Services.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open location settings", Toast.LENGTH_SHORT).show()
+                        }
+                        showGpsDisabledDialog = false
+                    }
+                ) {
+                    Text("Turn On GPS", color = Color(0xFF81C784))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGpsDisabledDialog = false }) {
+                    Text("Later", color = Color.White.copy(alpha = 0.6f))
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
 }
 
 @Composable
@@ -902,6 +1148,7 @@ fun DashboardScreen(
     var selectedPhotoForDetail by remember { mutableStateOf<GalleryPhoto?>(null) }
     var selectImageLauncherActive by remember { mutableStateOf(false) }
     var uploadNotificationActive by remember { mutableStateOf(false) }
+    var showGpsDisabledDialog by remember { mutableStateOf(false) }
 
     // Secret Dialog credentials
     var secretCodeDialogActive by remember { mutableStateOf(false) }
@@ -911,6 +1158,9 @@ fun DashboardScreen(
     // Init location query on load (safely)
     LaunchedEffect(Unit) {
         if (hasLocationPermissions(context)) {
+            if (!isGpsEnabled(context)) {
+                showGpsDisabledDialog = true
+            }
             isRefreshingLocation = true
             fetchCurrentLocation(
                 context = context,
@@ -1182,6 +1432,9 @@ fun DashboardScreen(
                     // Touch component to refresh precise coordinates manually
                     IconButton(
                         onClick = {
+                            if (!isGpsEnabled(context)) {
+                                showGpsDisabledDialog = true
+                            }
                             isRefreshingLocation = true
                             fetchCurrentLocation(
                                 context = context,
@@ -1500,6 +1753,57 @@ fun DashboardScreen(
                             fontSize = 12.sp
                         )
                     }
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showGpsDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = { showGpsDisabledDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.LocationOff,
+                    contentDescription = null,
+                    tint = Color(0xFFE57373),
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "GPS Services Required",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Your device's GPS or Location Services are currently turned off. To locate the family archivist and coordinates, please turn on GPS/Location Services.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open location settings", Toast.LENGTH_SHORT).show()
+                        }
+                        showGpsDisabledDialog = false
+                    }
+                ) {
+                    Text("Turn On GPS", color = Color(0xFF81C784))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGpsDisabledDialog = false }) {
+                    Text("Later", color = Color.White.copy(alpha = 0.6f))
                 }
             },
             containerColor = Color(0xFF1E1E24),
