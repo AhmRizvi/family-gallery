@@ -67,8 +67,13 @@ import java.net.URL
 import java.net.HttpURLConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import android.content.Intent
+import java.io.ByteArrayOutputStream
+import android.util.Base64
+import java.net.URLEncoder
 
 // Sealed interface representing the application screens
 sealed interface FamilyScreen {
@@ -2081,21 +2086,31 @@ fun UploadScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    var uploadNotificationActive by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadStatus by remember { mutableStateOf("") }
+    var progressVal by remember { mutableStateOf(0f) }
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFileName by remember { mutableStateOf<String?>(null) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
 
     val mediaUploadLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { resultUri ->
         if (resultUri != null) {
-            onAddUpload(resultUri)
-            uploadNotificationActive = true
+            selectedUri = resultUri
+            val bytesAndName = getUriBytesAndName(context, resultUri)
+            selectedFileName = bytesAndName?.second ?: "selected_image.jpg"
+            uploadStatus = "Ready to upload"
+            progressVal = 0f
         }
     }
 
-    if (uploadNotificationActive) {
+    if (showSuccessDialog) {
         AlertDialog(
             onDismissRequest = { 
-                uploadNotificationActive = false 
+                showSuccessDialog = false 
                 onBack() 
             },
             icon = {
@@ -2125,7 +2140,7 @@ fun UploadScreen(
             confirmButton = {
                 TextButton(
                     onClick = { 
-                        uploadNotificationActive = false 
+                        showSuccessDialog = false 
                         onBack() 
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
@@ -2175,7 +2190,7 @@ fun UploadScreen(
                     .background(Color(0xFF16161A), shape = RoundedCornerShape(24.dp))
                     .padding(32.dp)
             ) {
-                // Upload icon in custom circular background
+                // Large styled upload container containing state details
                 Box(
                     modifier = Modifier
                         .size(100.dp)
@@ -2183,7 +2198,7 @@ fun UploadScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CloudUpload,
+                        imageVector = if (selectedUri != null) Icons.Default.Attachment else Icons.Default.CloudUpload,
                         contentDescription = "Upload Icon",
                         tint = Color(0xFFE5A93B),
                         modifier = Modifier.size(52.dp)
@@ -2193,7 +2208,7 @@ fun UploadScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 Text(
-                    text = "Upload to Family Archive",
+                    text = if (selectedUri != null) "Memory Selected" else "Upload to Family Archive",
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -2202,41 +2217,274 @@ fun UploadScreen(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
+                // Show file name if selected, else default instructions
                 Text(
-                    text = "Select photos from your device to preserve them securely in the family's cosmic archive.",
+                    text = if (selectedUri != null) {
+                        "File: $selectedFileName"
+                    } else {
+                        "Select photos from your device to preserve them securely in the family's cosmic archive."
+                    },
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )
+
+                // Render Progress block during active uploading
+                if (isUploading || uploadStatus.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Text(
+                        text = uploadStatus,
+                        color = if (uploadStatus.contains("failed", ignoreCase = true)) Color(0xFFE57373) else Color(0xFFE5A93B),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Styled progress bar mapping progressVal
+                    LinearProgressIndicator(
+                        progress = { progressVal },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = Color(0xFFE5A93B),
+                        trackColor = Color.White.copy(alpha = 0.1f)
+                    )
+                }
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
-                Button(
-                    onClick = { mediaUploadLauncher.launch("image/*") },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE5A93B),
-                        contentColor = Color(0xFF1E1E24)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag("upload_image_action_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudUpload,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Select Photo to Upload",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                if (selectedUri == null) {
+                    // Step 1: Select the photo
+                    Button(
+                        onClick = { mediaUploadLauncher.launch("image/*") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE5A93B),
+                            contentColor = Color(0xFF1E1E24)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .testTag("upload_image_select_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoSizeSelectActual,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Choose Photo",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    // Step 2: Selected! Show "Upload button" and change photo option
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = {
+                                val uri = selectedUri
+                                if (uri != null && !isUploading) {
+                                    isUploading = true
+                                    uploadStatus = "Uploading..."
+                                    progressVal = 0f
+                                    
+                                    coroutineScope.launch {
+                                        // Simulated progress loop (increment randomly up to 90%)
+                                        val progressJob = launch {
+                                            var progress = 0
+                                            while (progress < 90) {
+                                                delay(150)
+                                                progress += (2..11).random()
+                                                if (progress > 90) progress = 90
+                                                progressVal = progress / 100f
+                                                uploadStatus = "Uploading... $progress%"
+                                            }
+                                        }
+
+                                        val uploadSuccess = withContext(Dispatchers.IO) {
+                                            try {
+                                                val bytesAndName = getUriBytesAndName(context, uri)
+                                                    ?: throw Exception("Empty file data")
+                                                val base64Data = Base64.encodeToString(bytesAndName.first, Base64.NO_WRAP)
+                                                val fileName = bytesAndName.second
+
+                                                val postData = "image=" + java.net.URLEncoder.encode(base64Data, "UTF-8") +
+                                                               "&filename=" + java.net.URLEncoder.encode(fileName, "UTF-8")
+                                                val postDataBytes = postData.toByteArray(charset("UTF-8"))
+
+                                                val result = postToAppsScript(
+                                                    "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec",
+                                                    postDataBytes
+                                                )
+                                                
+                                                // Response in 200..399 implies safe upload completion
+                                                result.first in 200..399
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                                false
+                                            }
+                                        }
+
+                                        progressJob.cancel() // Stop simulated incrementer
+
+                                        if (uploadSuccess) {
+                                            progressVal = 1.0f
+                                            uploadStatus = "Upload successful!"
+                                            delay(1500)
+                                            isUploading = false
+                                            
+                                            // Notify dashboard list of local uploads
+                                            onAddUpload(uri)
+                                            
+                                            // Show native confirmation dialogue matching requirement 
+                                            showSuccessDialog = true
+                                        } else {
+                                            progressVal = 0f
+                                            uploadStatus = "Upload failed due to connection error."
+                                            delay(2000)
+                                            isUploading = false
+                                            uploadStatus = "Ready to upload"
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isUploading,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE5A93B),
+                                contentColor = Color(0xFF1E1E24),
+                                disabledContainerColor = Color(0xFFE5A93B).copy(alpha = 0.5f),
+                                disabledContentColor = Color(0xFF1E1E24).copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("upload_image_action_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isUploading) "Uploading memory..." else "Upload to Archive",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (!isUploading) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            OutlinedButton(
+                                onClick = { mediaUploadLauncher.launch("image/*") },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color.White
+                                ),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
+                                Text("Choose Different Photo", fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+// Helper utility to read bytes & filename from local Uri
+fun getUriBytesAndName(context: Context, uri: Uri): Pair<ByteArray, String>? {
+    return try {
+        var fileName = "captured_image.jpg"
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    fileName = it.getString(nameIndex)
+                }
+            }
+        }
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val byteBuffer = ByteArrayOutputStream()
+        val buffer = ByteArray(1024)
+        var len: Int
+        inputStream?.use { input ->
+            while (input.read(buffer).also { len = it } != -1) {
+                byteBuffer.write(buffer, 0, len)
+            }
+        }
+        Pair(byteBuffer.toByteArray(), fileName)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+// Helper utility to execute Http Post payload with manual 302 redirection handling
+fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
+    var currentUrl = url
+    var conn: HttpURLConnection? = null
+    var redirectCount = 0
+    val maxRedirects = 5
+
+    while (redirectCount < maxRedirects) {
+        val connUrl = URL(currentUrl)
+        conn = connUrl.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        conn.setRequestProperty("Content-Length", postDataBytes.size.toString())
+        conn.doOutput = true
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
+        conn.instanceFollowRedirects = false // Manual management to check 302 details reliably
+
+        try {
+            conn.outputStream.use { os ->
+                os.write(postDataBytes)
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                
+                val newLocation = conn.getHeaderField("Location")
+                if (newLocation != null) {
+                    currentUrl = newLocation
+                    redirectCount++
+                    conn.disconnect()
+                    continue
+                }
+            }
+            
+            // Read standard response
+            val responseText = if (responseCode in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+            }
+            conn.disconnect()
+            return Pair(responseCode, responseText)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            conn.disconnect()
+            throw e
+        }
+    }
+    
+    return Pair(400, "Max redirects exceeded")
 }
