@@ -2766,33 +2766,49 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
     var conn: HttpURLConnection? = null
     var redirectCount = 0
     val maxRedirects = 5
+    var usePost = true
 
     while (redirectCount < maxRedirects) {
         val connUrl = URL(currentUrl)
         conn = connUrl.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-        conn.setRequestProperty("Content-Length", postDataBytes.size.toString())
-        conn.doOutput = true
+        if (usePost) {
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.setRequestProperty("Content-Length", postDataBytes.size.toString())
+            conn.doOutput = true
+        } else {
+            conn.requestMethod = "GET"
+            conn.doOutput = false
+        }
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
         conn.instanceFollowRedirects = false // Manual management to check 302 details reliably
 
         try {
-            conn.outputStream.use { os ->
-                os.write(postDataBytes)
+            if (usePost) {
+                conn.outputStream.use { os ->
+                    os.write(postDataBytes)
+                }
             }
 
             val responseCode = conn.responseCode
             if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
                 responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
-                responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                responseCode == 301 || responseCode == 302 || responseCode == 303 ||
+                responseCode == 307 || responseCode == 308) {
                 
                 val newLocation = conn.getHeaderField("Location")
                 if (newLocation != null) {
                     currentUrl = newLocation
                     redirectCount++
                     conn.disconnect()
+                    
+                    // For typical 301/302/303 redirect after POST, switch to GET
+                    if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                        responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                        responseCode == 301 || responseCode == 302 || responseCode == 303) {
+                        usePost = false
+                    }
                     continue
                 }
             }
