@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Looper
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -87,6 +90,16 @@ sealed interface FamilyScreen {
     object Upload : FamilyScreen
 }
 
+fun FamilyScreen.getPriority(): Int {
+    return when (this) {
+        FamilyScreen.Welcome -> 0
+        FamilyScreen.Login -> 1
+        FamilyScreen.Dashboard -> 2
+        FamilyScreen.SecretFolder -> 3
+        FamilyScreen.Upload -> 3
+    }
+}
+
 // Model for gallery photos
 data class GalleryPhoto(
     val id: String,
@@ -135,9 +148,9 @@ fun isGpsEnabled(context: Context): Boolean {
 
 fun hasAllRequiredAccess(context: Context): Boolean {
     return hasLocationPermissions(context) &&
-           isGpsEnabled(context) &&
-           hasCameraPermission(context) &&
-           hasGalleryPermissions(context)
+            isGpsEnabled(context) &&
+            hasCameraPermission(context) &&
+            hasGalleryPermissions(context)
 }
 
 @SuppressLint("MissingPermission")
@@ -433,6 +446,17 @@ fun FamilyGalleryApp() {
 
     var screen by remember { mutableStateOf<FamilyScreen>(FamilyScreen.Welcome) }
     
+    // Intercept hardware/system back button presses to go back in UI instead of closing the app
+    BackHandler(enabled = screen != FamilyScreen.Welcome) {
+        screen = when (screen) {
+            is FamilyScreen.Login -> FamilyScreen.Welcome
+            is FamilyScreen.Dashboard -> FamilyScreen.Welcome
+            is FamilyScreen.SecretFolder -> FamilyScreen.Dashboard
+            is FamilyScreen.Upload -> FamilyScreen.Dashboard
+            else -> FamilyScreen.Welcome
+        }
+    }
+    
     // Global shared states for the main application
     var pendingUploads by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var locationState by remember { mutableStateOf("Locating family archivist...") }
@@ -456,12 +480,19 @@ fun FamilyGalleryApp() {
             )
         } else {
             AnimatedContent(
-            targetState = screen,
-            transitionSpec = {
-                fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
-            },
-            label = "ScreenTransition"
-        ) { currentScreen ->
+                targetState = screen,
+                transitionSpec = {
+                    val isBack = targetState.getPriority() < initialState.getPriority()
+                    if (isBack) {
+                        (slideInHorizontally(animationSpec = tween(450)) { -it } + fadeIn(animationSpec = tween(450)))
+                            .togetherWith(slideOutHorizontally(animationSpec = tween(450)) { it } + fadeOut(animationSpec = tween(350)))
+                    } else {
+                        (slideInHorizontally(animationSpec = tween(450)) { it } + fadeIn(animationSpec = tween(450)))
+                            .togetherWith(slideOutHorizontally(animationSpec = tween(450)) { -it } + fadeOut(animationSpec = tween(350)))
+                    }
+                },
+                label = "ScreenTransition"
+            ) { currentScreen ->
             when (currentScreen) {
                 is FamilyScreen.Welcome -> {
                     WelcomeScreen(
@@ -2284,12 +2315,6 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = photo.date,
-                                        color = Color(0xFF81C784),
-                                        fontSize = 11.sp
-                                    )
                                 }
                             }
                         }
@@ -2309,30 +2334,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     onClick = { selectedSecretPhotoForDetail = null },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
                 ) {
-                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/file/d/${p.id}/view"))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF64B5F6))
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Launch,
-                            contentDescription = "View on Drive",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("View on Drive", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
+                    Text("Close", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
@@ -2353,7 +2355,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                     contentDescription = p.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
-                                )
+                               )
                             } else {
                                 AsyncImage(
                                     model = p.identifier as String,
@@ -2375,30 +2377,6 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF81C784), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = p.date,
-                            color = Color(0xFF81C784),
-                            fontSize = 12.sp
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Icon(Icons.Default.Place, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = p.location,
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 12.sp
-                        )
-                    }
                 }
             },
             containerColor = Color(0xFF1E1E24),
