@@ -1248,7 +1248,7 @@ fun DashboardScreen(
         list
     }
 
-    var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(defaultPhotos) }
+    var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(emptyList()) }
     var isPhotosLoading by remember { mutableStateOf(true) }
     var photosError by remember { mutableStateOf<String?>(null) }
 
