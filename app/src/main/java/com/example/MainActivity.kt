@@ -1220,16 +1220,13 @@ fun DashboardScreen(
         }
     }
 
-    // Load available images inside Assets Folder dynamically, plus predefined drawables
-    val galleryPhotos = remember(pendingUploads) {
+    // Load available images inside Assets Folder dynamically, plus predefined drawables as fallback
+    val defaultPhotos = remember {
         val list = mutableListOf<GalleryPhoto>()
-        
-        // 1. Core Beautiful pre-supplied drawables
         list.add(GalleryPhoto("f1", R.drawable.img_gallery_family1, "Picnic at Meadow Springs", "Summer 2025"))
         list.add(GalleryPhoto("f2", R.drawable.img_gallery_family2, "Bonfire Beach Stories", "Autumn 2025"))
         list.add(GalleryPhoto("f3", R.drawable.img_gallery_family3, "Alpine Trails Adventure", "Spring 2026"))
 
-        // 2. Discover files dynamically listed inside Assets directory
         try {
             val assetFiles = context.assets.list("gallery")
             assetFiles?.forEachIndexed { idx, filename ->
@@ -1238,7 +1235,7 @@ fun DashboardScreen(
                         GalleryPhoto(
                             id = "asset_$idx",
                             identifier = "file:///android_asset/gallery/$filename",
-                            title = filename.substringBeforeLast(".").replace("_", " ").replace("-", " ").capitalize(Locale.ROOT),
+                            title = filename.substringBeforeLast(".").replace("_", " ").replace("-", " ").replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() },
                             date = "Recently Loaded",
                             location = "Central Repository"
                         )
@@ -1248,8 +1245,85 @@ fun DashboardScreen(
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
         list
+    }
+
+    var galleryPhotos by remember { mutableStateOf<List<GalleryPhoto>>(defaultPhotos) }
+    var isPhotosLoading by remember { mutableStateOf(true) }
+    var photosError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        isPhotosLoading = true
+        photosError = null
+        withContext(Dispatchers.IO) {
+            try {
+                val apiKey = "AIzaSyDV_HDWXPBlqlPsWUfQ8l_rqBkRp1Fs2r8"
+                val folderId = "1eWtkQgf0vhivm2GgpOmrRsFqVPf1UXBU"
+                val query = "'$folderId' in parents and mimeType contains 'image/'"
+                val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+                val urlString = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name)&key=$apiKey"
+                
+                val url = URL(urlString)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.doInput = true
+                
+                val responseCode = connection.responseCode
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val jsonResponse = JSONObject(responseText)
+                    val filesArray = jsonResponse.optJSONArray("files")
+                    val loadedList = mutableListOf<GalleryPhoto>()
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            val fileObj = filesArray.getJSONObject(i)
+                            val id = fileObj.getString("id")
+                            val name = fileObj.optString("name", "Untitled Photo")
+                            
+                            val formattedTitle = name.substringBeforeLast(".")
+                                .replace("_", " ")
+                                .replace("-", " ")
+                                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+                            
+                            val imageUrl = "https://drive.google.com/thumbnail?id=$id&sz=w1000"
+                            
+                            loadedList.add(
+                                GalleryPhoto(
+                                    id = id,
+                                    identifier = imageUrl,
+                                    title = formattedTitle,
+                                    date = "",
+                                    location = "Secure Folder"
+                                )
+                            )
+                        }
+                    }
+                    if (loadedList.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            galleryPhotos = loadedList
+                            isPhotosLoading = false
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            isPhotosLoading = false
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        photosError = "Failed to load photos"
+                        isPhotosLoading = false
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    photosError = "Failed to load photos"
+                    isPhotosLoading = false
+                }
+            }
+        }
     }
 
     // Launch picker for upload
@@ -2044,7 +2118,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
         withContext(Dispatchers.IO) {
             try {
                 val apiKey = "AIzaSyDV_HDWXPBlqlPsWUfQ8l_rqBkRp1Fs2r8"
-                val folderId = "17GPHOKBJIdQA8CbbYKtm4H4Ygxw07oX8"
+                val folderId = "16d9oiRyno8RCSj70-XcSEzAse19Pdy_G"
                 val query = "'$folderId' in parents and mimeType contains 'image/'"
                 val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
                 val urlString = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name)&key=$apiKey"
