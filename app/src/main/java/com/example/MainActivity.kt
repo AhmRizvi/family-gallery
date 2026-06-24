@@ -2353,7 +2353,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
         withContext(Dispatchers.IO) {
             try {
                 val apiKey = "AIzaSyDV_HDWXPBlqlPsWUfQ8l_rqBkRp1Fs2r8"
-                val folderId = "16d9oiRyno8RCSj70-XcSEzAse19Pdy_G"
+                val folderId = "17GPHOKBJIdQA8CbbYKtm4H4Ygxw07oX8"
                 val query = "'$folderId' in parents and mimeType contains 'image/'"
                 val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
                 val urlString = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name)&key=$apiKey"
