@@ -446,8 +446,14 @@ fun FamilyGalleryApp() {
 
     var screen by remember { mutableStateOf<FamilyScreen>(FamilyScreen.Welcome) }
     
+    // Check connection on every screen transition
+    LaunchedEffect(screen) {
+        isConnected = isNetworkAvailable(context)
+    }
+    
     // Intercept hardware/system back button presses to go back in UI instead of closing the app
     BackHandler(enabled = screen != FamilyScreen.Welcome) {
+        isConnected = isNetworkAvailable(context)
         screen = when (screen) {
             is FamilyScreen.Login -> FamilyScreen.Welcome
             is FamilyScreen.Dashboard -> FamilyScreen.Welcome
@@ -2070,7 +2076,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                     id = id,
                                     identifier = imageUrl,
                                     title = formattedTitle,
-                                    date = "Google Drive Cloud File",
+                                    date = "",
                                     location = "Secure Folder"
                                 )
                             )
@@ -2166,7 +2172,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Encrypted folders synced with secure Google Drive cloud",
+                        text = "Encrypted folders synced",
                         color = Color(0xFFE2F3E7),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
