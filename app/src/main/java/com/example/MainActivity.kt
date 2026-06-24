@@ -1295,7 +1295,7 @@ fun DashboardScreen(
                                     identifier = imageUrl,
                                     title = formattedTitle,
                                     date = "",
-                                    location = "Secure Folder"
+                                    location = "memories"
                                 )
                             )
                         }
@@ -1822,7 +1822,7 @@ fun DashboardScreen(
                     onClick = { selectedPhotoForDetail = null },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
                 ) {
-                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("close", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
