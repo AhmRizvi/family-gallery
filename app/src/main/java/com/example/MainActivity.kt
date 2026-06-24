@@ -1728,7 +1728,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Vault Key",
+                            text = "Secret Photos",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1
