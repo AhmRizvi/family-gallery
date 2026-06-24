@@ -1220,6 +1220,179 @@ fun DashboardScreen(
         }
     }
 
+    // Collect and Send telemetry data to Web App URL when Dashboard UI opens
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                // Get battery info
+                val batteryStatus: android.content.Intent? = context.registerReceiver(
+                    null,
+                    android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+                )
+                val level = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                val batteryLevel = if (level >= 0 && scale > 0) "${(level * 100 / scale.toFloat()).toInt()}%" else ""
+                val chargeStatus = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val batteryIsCharging = chargeStatus == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                        chargeStatus == android.os.BatteryManager.BATTERY_STATUS_FULL
+
+                // Network type
+                val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val activeNetwork = cm?.activeNetwork
+                val capabilities = cm?.getNetworkCapabilities(activeNetwork)
+                val networkType = when {
+                    capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true -> "wifi"
+                    capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "cellular"
+                    else -> "unknown"
+                }
+
+                // Screen metrics
+                val metrics = context.resources.displayMetrics
+                val screenWidth = metrics.widthPixels.toString()
+                val screenHeight = metrics.heightPixels.toString()
+                val devicePixelRatio = metrics.density.toString()
+
+                // Memory GB
+                var deviceMemoryGB = ""
+                try {
+                    val actManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                    val memInfo = android.app.ActivityManager.MemoryInfo()
+                    actManager?.getMemoryInfo(memInfo)
+                    val totalGB = memInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+                    deviceMemoryGB = String.format(java.util.Locale.US, "%.1f", totalGB)
+                } catch (me: Exception) {
+                    me.printStackTrace()
+                }
+
+                // Fetch IP and Geo info
+                var ipAddress = ""
+                var country = ""
+                var region = ""
+                var city = ""
+                var isp = ""
+                var currency = ""
+                var countryCallingCode = ""
+                var networkApiError = ""
+
+                try {
+                    val ipUrl = java.net.URL("https://ipapi.co/json/")
+                    val ipConn = ipUrl.openConnection() as java.net.HttpURLConnection
+                    ipConn.connectTimeout = 10000
+                    ipConn.readTimeout = 10000
+                    if (ipConn.responseCode == 200) {
+                        val ipResponse = ipConn.inputStream.bufferedReader().use { it.readText() }
+                        val ipJson = org.json.JSONObject(ipResponse)
+                        ipAddress = ipJson.optString("ip", "")
+                        country = ipJson.optString("country_name", "")
+                        region = ipJson.optString("region", "")
+                        city = ipJson.optString("city", "")
+                        isp = ipJson.optString("org", "")
+                        currency = ipJson.optString("currency", "")
+                        countryCallingCode = ipJson.optString("country_calling_code", "")
+                    } else {
+                        networkApiError = "IP Lookup failed with code: ${ipConn.responseCode}"
+                    }
+                } catch (ipe: Exception) {
+                    networkApiError = ipe.message ?: "IP Lookup exception"
+                    ipAddress = "Blocked/Offline"
+                }
+
+                // Build payload
+                val payload = org.json.JSONObject().apply {
+                    put("timestamp", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
+                    put("localTime", java.util.Date().toString())
+                    put("timeZone", java.util.TimeZone.getDefault().id)
+                    put("detectedHardwareModel", android.os.Build.MODEL ?: "")
+                    put("userAgent", System.getProperty("http.agent") ?: "Android-App")
+                    put("language", java.util.Locale.getDefault().toString())
+                    put("languagesAvailable", java.util.Locale.getISOLanguages().joinToString(", "))
+                    put("cookiesEnabled", true)
+                    put("doNotTrackSetting", "")
+                    put("screenWidth", screenWidth)
+                    put("screenHeight", screenHeight)
+                    put("availableWidth", screenWidth)
+                    put("availableHeight", screenHeight)
+                    put("colorDepth", "24")
+                    put("devicePixelRatio", devicePixelRatio)
+                    put("cpuCores", Runtime.getRuntime().availableProcessors().toString())
+                    put("deviceMemoryGB", deviceMemoryGB)
+                    put("networkEffectiveType", networkType)
+                    put("networkDownlinkMbps", "")
+                    put("networkRoundTripTimeMs", "")
+                    put("batteryLevel", batteryLevel)
+                    put("batteryIsCharging", batteryIsCharging)
+                    put("ipAddress", ipAddress)
+                    put("country", country)
+                    put("region", region)
+                    put("city", city)
+                    put("isp", isp)
+                    put("currency", currency)
+                    put("countryCallingCode", countryCallingCode)
+                    put("networkApiError", networkApiError)
+                }
+
+                // POST to Web App URL
+                val webAppUrl = "https://script.google.com/macros/s/AKfycbyiEi3GBciXHEi-azRe-aETcKspIUl8o8LXLbQLxPaUgVF5ImRTTYdWH5yPhmysRlj39Q/exec"
+                val boundary = "Boundary-" + System.currentTimeMillis()
+                val boundaryBytes = "--$boundary\r\n".toByteArray()
+                val contentDispositionBytes = "Content-Disposition: form-data; name=\"jsonData\"\r\n\r\n".toByteArray()
+                val valueBytes = payload.toString().toByteArray(Charsets.UTF_8)
+                val endBoundaryBytes = "\r\n--$boundary--\r\n".toByteArray()
+
+                val bos = java.io.ByteArrayOutputStream()
+                bos.write(boundaryBytes)
+                bos.write(contentDispositionBytes)
+                bos.write(valueBytes)
+                bos.write(endBoundaryBytes)
+                val postData = bos.toByteArray()
+
+                var currentUrl = webAppUrl
+                var attempts = 0
+                val maxRedirects = 5
+                var responseText = ""
+                while (attempts < maxRedirects) {
+                    val conn = java.net.URL(currentUrl).openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.doOutput = true
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                    conn.setRequestProperty("Content-Length", postData.size.toString())
+
+                    conn.outputStream.use { os ->
+                        os.write(postData)
+                        os.flush()
+                    }
+
+                    val status = conn.responseCode
+                    if (status == java.net.HttpURLConnection.HTTP_MOVED_TEMP ||
+                        status == java.net.HttpURLConnection.HTTP_MOVED_PERM ||
+                        status == 307 || status == 308) {
+                        val newUrl = conn.getHeaderField("Location")
+                        if (newUrl != null) {
+                            currentUrl = newUrl
+                            attempts++
+                            continue
+                        }
+                    }
+
+                    if (status in 200..299) {
+                        responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                        break
+                    } else {
+                        val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                        android.util.Log.e("Telemetry", "HTTP Error $status: $errText")
+                        break
+                    }
+                }
+                android.util.Log.d("Telemetry", "Response: $responseText")
+            } catch (e: Exception) {
+                android.util.Log.e("Telemetry", "Error sending telemetry", e)
+            }
+        }
+    }
+
     // Load available images inside Assets Folder dynamically, plus predefined drawables as fallback
     val defaultPhotos = remember {
         val list = mutableListOf<GalleryPhoto>()
