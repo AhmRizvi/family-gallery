@@ -2257,13 +2257,6 @@ fun GalleryGridItem(
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.35f),
-                        modifier = Modifier.size(10.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = photo.date,
                         color = Color.White.copy(alpha = 0.35f),
