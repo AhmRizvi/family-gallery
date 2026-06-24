@@ -428,11 +428,15 @@ fun FamilyGalleryApp() {
         
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
-                isConnected = true
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    isConnected = true
+                }
             }
 
             override fun onLost(network: android.net.Network) {
-                isConnected = isNetworkAvailable(context)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    isConnected = isNetworkAvailable(context)
+                }
             }
         }
         
@@ -473,7 +477,7 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        if (!isConnected) {
+        if (!isConnected && screen != FamilyScreen.Welcome) {
             NoInternetConnectionScreen(
                 onRetry = {
                     isConnected = isNetworkAvailable(context)
@@ -2635,7 +2639,7 @@ fun UploadScreen(
                                                 val postDataBytes = postData.toByteArray(charset("UTF-8"))
 
                                                 val result = postToAppsScript(
-                                                    "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec",
+                                                    "https://script.google.com/macros/s/AKfycbwZ6udEKKkC3Qid-ahO5AxeqmIeUhs7VX4SU6i1lufRUQoGIAa-Xt_dWJHIIQOZRowz/exec",
                                                     postDataBytes
                                                 )
                                                 
@@ -2773,6 +2777,7 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
     var redirectCount = 0
     val maxRedirects = 5
     var usePost = true
+    var initialPostSucceeded = false
 
     while (redirectCount < maxRedirects) {
         val connUrl = URL(currentUrl)
@@ -2798,6 +2803,15 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
             }
 
             val responseCode = conn.responseCode
+            
+            // If the initial POST request returns a redirect, the upload script has run successfully!
+            if (usePost && (responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                responseCode == 301 || responseCode == 302 || responseCode == 303 ||
+                responseCode == 307 || responseCode == 308)) {
+                initialPostSucceeded = true
+            }
+
             if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
                 responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
                 responseCode == 301 || responseCode == 302 || responseCode == 303 ||
@@ -2829,10 +2843,18 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
             return Pair(responseCode, responseText)
         } catch (e: Exception) {
             e.printStackTrace()
-            conn.disconnect()
+            conn?.disconnect()
+            
+            // If the initial POST already completed and redirected, we can treat any subsequent redirect/GET failure as success
+            if (initialPostSucceeded) {
+                return Pair(200, "Success (Redirect ignored/failed but initial upload completed)")
+            }
             throw e
         }
     }
     
+    if (initialPostSucceeded) {
+        return Pair(200, "Success (Max redirects exceeded but initial upload completed)")
+    }
     return Pair(400, "Max redirects exceeded")
 }
