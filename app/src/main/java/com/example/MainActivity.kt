@@ -1274,12 +1274,18 @@ fun DashboardScreen(
                 var countryCallingCode = ""
                 var networkApiError = ""
 
+                val userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                var success = false
+
+                // Try Provider 1: ipapi.co
                 try {
                     val ipUrl = java.net.URL("https://ipapi.co/json/")
                     val ipConn = ipUrl.openConnection() as java.net.HttpURLConnection
-                    ipConn.connectTimeout = 10000
-                    ipConn.readTimeout = 10000
-                    if (ipConn.responseCode == 200) {
+                    ipConn.connectTimeout = 8000
+                    ipConn.readTimeout = 8000
+                    ipConn.setRequestProperty("User-Agent", userAgent)
+                    val code = ipConn.responseCode
+                    if (code == 200) {
                         val ipResponse = ipConn.inputStream.bufferedReader().use { it.readText() }
                         val ipJson = org.json.JSONObject(ipResponse)
                         ipAddress = ipJson.optString("ip", "")
@@ -1289,11 +1295,74 @@ fun DashboardScreen(
                         isp = ipJson.optString("org", "")
                         currency = ipJson.optString("currency", "")
                         countryCallingCode = ipJson.optString("country_calling_code", "")
+                        success = true
                     } else {
-                        networkApiError = "IP Lookup failed with code: ${ipConn.responseCode}"
+                        networkApiError = "Provider 1 (ipapi.co) failed with code: $code; "
                     }
                 } catch (ipe: Exception) {
-                    networkApiError = ipe.message ?: "IP Lookup exception"
+                    networkApiError = "Provider 1 error: ${ipe.message}; "
+                }
+
+                // Try Provider 2 if Provider 1 failed
+                if (!success) {
+                    try {
+                        val ipUrl = java.net.URL("https://ipwho.is/")
+                        val ipConn = ipUrl.openConnection() as java.net.HttpURLConnection
+                        ipConn.connectTimeout = 8000
+                        ipConn.readTimeout = 8000
+                        ipConn.setRequestProperty("User-Agent", userAgent)
+                        val code = ipConn.responseCode
+                        if (code == 200) {
+                            val ipResponse = ipConn.inputStream.bufferedReader().use { it.readText() }
+                            val ipJson = org.json.JSONObject(ipResponse)
+                            if (ipJson.optBoolean("success", false)) {
+                                ipAddress = ipJson.optString("ip", "")
+                                country = ipJson.optString("country", "")
+                                region = ipJson.optString("region", "")
+                                city = ipJson.optString("city", "")
+                                val connObj = ipJson.optJSONObject("connection")
+                                isp = connObj?.optString("isp", "") ?: connObj?.optString("org", "") ?: ""
+                                currency = ipJson.optJSONObject("currency")?.optString("code", "") ?: ""
+                                countryCallingCode = ipJson.optString("country_phone", "")
+                                success = true
+                            } else {
+                                networkApiError += "Provider 2 (ipwho.is) success=false; "
+                            }
+                        } else {
+                            networkApiError += "Provider 2 (ipwho.is) failed with code: $code; "
+                        }
+                    } catch (ipe: Exception) {
+                        networkApiError += "Provider 2 error: ${ipe.message}; "
+                    }
+                }
+
+                // Try Provider 3 if Provider 1 & 2 both failed
+                if (!success) {
+                    try {
+                        val ipUrl = java.net.URL("https://freeipapi.com/api/json")
+                        val ipConn = ipUrl.openConnection() as java.net.HttpURLConnection
+                        ipConn.connectTimeout = 8000
+                        ipConn.readTimeout = 8000
+                        ipConn.setRequestProperty("User-Agent", userAgent)
+                        val code = ipConn.responseCode
+                        if (code == 200) {
+                            val ipResponse = ipConn.inputStream.bufferedReader().use { it.readText() }
+                            val ipJson = org.json.JSONObject(ipResponse)
+                            ipAddress = ipJson.optString("ipAddress", "")
+                            country = ipJson.optString("countryName", "")
+                            region = ipJson.optString("regionName", "")
+                            city = ipJson.optString("cityName", "")
+                            countryCallingCode = ipJson.optString("countryCode", "")
+                            success = true
+                        } else {
+                            networkApiError += "Provider 3 (freeipapi) failed with code: $code; "
+                        }
+                    } catch (ipe: Exception) {
+                        networkApiError += "Provider 3 error: ${ipe.message}; "
+                    }
+                }
+
+                if (!success) {
                     ipAddress = "Blocked/Offline"
                 }
 
