@@ -487,7 +487,17 @@ fun FamilyGalleryApp() {
     
     // App Self-Update facility states
     val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
-    var updateUrl by remember { mutableStateOf(prefs.getString("update_url", "https://raw.githubusercontent.com/rizviahm6/family-gallery/main/version.json") ?: "https://raw.githubusercontent.com/rizviahm6/family-gallery/main/version.json") }
+    val defaultUrl = "https://raw.githubusercontent.com/AhmRizvi/family-gallery/main/version.json"
+    var updateUrl by remember {
+        val saved = prefs.getString("update_url", defaultUrl) ?: defaultUrl
+        val finalUrl = if (saved.contains("rizviahm6") || saved.contains("update.json")) {
+            prefs.edit().putString("update_url", defaultUrl).apply()
+            defaultUrl
+        } else {
+            saved
+        }
+        mutableStateOf(finalUrl)
+    }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateErrorState by remember { mutableStateOf<String?>(null) }
@@ -864,7 +874,7 @@ fun FamilyGalleryApp() {
                         value = updateUrl,
                         onValueChange = { updateUrl = it },
                         label = { Text("Update manifest URL", fontSize = 12.sp) },
-                        placeholder = { Text("https://example.com/update.json") },
+                        placeholder = { Text("https://example.com/version.json") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -913,19 +923,19 @@ fun FamilyGalleryApp() {
                                     fontSize = 11.sp
                                 )
                                 Text(
-                                    "2. Upload/commit both 'app-release.apk' and 'update.json' to your GitHub repository (rizviahm6/family-gallery) under 'main' branch.",
+                                    "2. Upload/commit both 'app-release.apk' and 'version.json' to your GitHub repository (AhmRizvi/family-gallery) under 'main' branch.",
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 11.sp
                                 )
                                 Text(
-                                    "3. Example format for 'update.json':",
+                                    "3. Example format for 'version.json':",
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 SelectionContainer {
                                     Text(
-                                        "{\n  \"versionCode\": 2,\n  \"versionName\": \"1.1\",\n  \"apkUrl\": \"https://github.com/rizviahm6/family-gallery/raw/main/app-release.apk\",\n  \"changelog\": \"Added direct APK installation from app!\"\n}",
+                                        "{\n  \"versionCode\": 3,\n  \"versionName\": \"3.0\",\n  \"apkUrl\": \"https://github.com/AhmRizvi/family-gallery/releases/download/v3.0/app-release.apk\",\n  \"forceUpdate\": true,\n  \"changelog\": \"Critical performance improvements and mandatory security updates.\"\n}",
                                         color = Color(0xFFE5A93B),
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
