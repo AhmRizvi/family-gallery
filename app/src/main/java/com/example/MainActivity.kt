@@ -1714,7 +1714,7 @@ fun DashboardScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color(0xFF121214), // Dark sleek twilight background coordinate styling
+        containerColor = Color(0xFFF8F9FA), // Clean white-slate background for Dashboard UI
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
@@ -1722,13 +1722,13 @@ fun DashboardScreen(
                     Column {
                         Text(
                             text = "Family Gallery",
-                            color = Color.White,
+                            color = Color(0xFF1E1E24), // Elegant dark text
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp
                         )
                         Text(
                             text = "Cherishing sweet moments",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = Color(0xFF1E1E24).copy(alpha = 0.6f), // Muted secondary text
                             fontSize = 11.sp
                         )
                     }
@@ -1781,14 +1781,14 @@ fun DashboardScreen(
                             Icon(
                                 imageVector = Icons.Default.SystemUpdate,
                                 contentDescription = "Check for Updates",
-                                tint = if (backgroundUpdateBadgeActive) Color(0xFFE5A93B) else Color.White.copy(alpha = 0.8f)
+                                tint = if (backgroundUpdateBadgeActive) Color(0xFFD68A1B) else Color(0xFF1E1E24).copy(alpha = 0.7f)
                             )
                         }
                         if (backgroundUpdateBadgeActive) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
-                                    .background(Color(0xFFE57373), shape = CircleShape)
+                                    .background(Color(0xFFD32F2F), shape = CircleShape)
                                     .align(Alignment.TopEnd)
                             )
                         }
@@ -1798,13 +1798,13 @@ fun DashboardScreen(
                         Icon(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "Logout",
-                            tint = Color.White.copy(alpha = 0.6f)
+                            tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF16161A),
-                    titleContentColor = Color.White
+                    containerColor = Color.White,
+                    titleContentColor = Color(0xFF1E1E24)
                 )
             )
         },
@@ -1814,9 +1814,9 @@ fun DashboardScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding(),
-                color = Color(0xFF16161A),
+                color = Color.White,
                 tonalElevation = 8.dp,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
             ) {
                 Row(
                     modifier = Modifier
@@ -1910,9 +1910,9 @@ fun DashboardScreen(
                     .padding(16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF1A1A1E)
+                    containerColor = Color.White
                 ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
             ) {
                 Row(
                     modifier = Modifier
@@ -1923,13 +1923,13 @@ fun DashboardScreen(
                     Box(
                         modifier = Modifier
                             .size(44.dp)
-                            .background(Color(0xFF81C784).copy(alpha = 0.15f), shape = CircleShape),
+                            .background(Color(0xFF2E7D32).copy(alpha = 0.1f), shape = CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.MyLocation,
                             contentDescription = "User Location",
-                            tint = Color(0xFF81C784),
+                            tint = Color(0xFF2E7D32),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1942,7 +1942,7 @@ fun DashboardScreen(
                         Text(
                             text = "Family Archivist GPS Location",
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.4f),
+                            color = Color(0xFF757575),
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -1950,7 +1950,7 @@ fun DashboardScreen(
                         Text(
                             text = locationState,
                             fontSize = 14.sp,
-                            color = Color.White,
+                            color = Color(0xFF1E1E24),
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -1961,7 +1961,7 @@ fun DashboardScreen(
                                 text = "LAT: ${String.format(Locale.US, "%.5f", userCoordinates.first)} • LON: ${String.format(Locale.US, "%.5f", userCoordinates.second)}",
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF81C784),
+                                color = Color(0xFF2E7D32),
                                 modifier = Modifier.padding(top = 2.dp)
                             )
                         }
@@ -1991,13 +1991,13 @@ fun DashboardScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
-                                color = Color(0xFF81C784)
+                                color = Color(0xFF2E7D32)
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh GPS",
-                                tint = Color.White.copy(alpha = 0.5f)
+                                tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
                             )
                         }
                     }
@@ -2014,14 +2014,14 @@ fun DashboardScreen(
             ) {
                 Text(
                     text = "Family Album",
-                    color = Color.White,
+                    color = Color(0xFF1E1E24),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
                     text = "${galleryPhotos.size} Memories",
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = Color(0xFF1E1E24).copy(alpha = 0.5f),
                     fontSize = 13.sp
                 )
             }
@@ -2048,7 +2048,7 @@ fun DashboardScreen(
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(
                             text = "Pending Upload Clearances",
-                            color = Color(0xFFE5A93B),
+                            color = Color(0xFFD68A1B),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
@@ -2773,9 +2773,9 @@ fun GalleryGridItem(
             .testTag("photo_item_card_${photo.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1A1A1E)
+            containerColor = Color.White
         ),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
     ) {
         Column {
             Box(
@@ -2818,7 +2818,7 @@ fun GalleryGridItem(
             ) {
                 Text(
                     text = photo.title,
-                    color = Color.White,
+                    color = Color(0xFF1E1E24),
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     maxLines = 1,
@@ -2830,7 +2830,7 @@ fun GalleryGridItem(
                 ) {
                     Text(
                         text = photo.date,
-                        color = Color.White.copy(alpha = 0.35f),
+                        color = Color(0xFF1E1E24).copy(alpha = 0.6f),
                         fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -2849,9 +2849,9 @@ fun PendingUploadItem(uri: Uri) {
             .testTag("pending_item"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF262118) // Tinted gold-amber card
+            containerColor = Color(0xFFFFFDF5) // Very light warm amber
         ),
-        border = BorderStroke(1.dp, Color(0xFFE5A93B).copy(alpha = 0.15f))
+        border = BorderStroke(1.dp, Color(0xFFE5A93B).copy(alpha = 0.3f))
     ) {
         Column {
             Box(
@@ -2894,14 +2894,14 @@ fun PendingUploadItem(uri: Uri) {
             ) {
                 Text(
                     text = "Transmitting...",
-                    color = Color(0xFFE5A93B),
+                    color = Color(0xFFD68A1B), // Darker amber for readability on light yellow
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Queue release: 7 Days",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = Color(0xFF1E1E24).copy(alpha = 0.6f),
                     fontSize = 11.sp
                 )
             }
