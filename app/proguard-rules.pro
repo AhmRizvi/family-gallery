@@ -1,4 +1,5 @@
-# Add project specific ProGuard rules here.
+# Speed up compilation by skipping heavy optimization passes, but still shrink unused code and assets.
+-dontoptimize
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
