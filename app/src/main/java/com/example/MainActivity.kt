@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -1227,6 +1228,13 @@ fun DashboardScreen(
     var latestChangelog by remember { mutableStateOf("") }
     var backgroundUpdateBadgeActive by remember { mutableStateOf(false) }
 
+    // APK Download specific states
+    var isDownloadingApk by remember { mutableStateOf(false) }
+    var downloadApkProgress by remember { mutableStateOf(0f) }
+    var downloadApkError by remember { mutableStateOf<String?>(null) }
+    var showUnknownSourcesDialog by remember { mutableStateOf(false) }
+    var pendingApkFile by remember { mutableStateOf<java.io.File?>(null) }
+
     fun performManualUpdateCheck() {
         isCheckingUpdate = true
         updateErrorState = null
@@ -2229,7 +2237,7 @@ fun DashboardScreen(
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = "Because this is a private family application hosted on Git, you can check for updates and update your application directly here.",
@@ -2285,6 +2293,69 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    // How to publish instructions guide (collapsible)
+                    var showGuide by remember { mutableStateOf(false) }
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showGuide = !showGuide }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (showGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = Color(0xFFE5A93B),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "How to publish updates from GitHub?",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (showGuide) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 22.dp, top = 4.dp, bottom = 8.dp)
+                            ) {
+                                Text(
+                                    "1. Build your updated APK in AI Studio, download it, and rename it to 'app-release.apk'.",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    "2. Upload/commit both 'app-release.apk' and 'update.json' to your GitHub repository (rizviahm6/family-gallery) under 'main' branch.",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    "3. Example format for 'update.json':",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                SelectionContainer {
+                                    Text(
+                                        "{\n  \"versionCode\": 2,\n  \"versionName\": \"1.1\",\n  \"apkUrl\": \"https://github.com/rizviahm6/family-gallery/raw/main/app-release.apk\",\n  \"changelog\": \"Added direct APK installation from app!\"\n}",
+                                        color = Color(0xFFE5A93B),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color.Black.copy(alpha = 0.3f), shape = RoundedCornerShape(4.dp))
+                                            .padding(6.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Check results / changelog / loaders
                     if (isCheckingUpdate) {
                         Row(
@@ -2335,28 +2406,130 @@ fun DashboardScreen(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                         )
                     }
+
+                    // Direct APK Download Progress / Errors
+                    if (isDownloadingApk) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Text(
+                                "Downloading Update: ${(downloadApkProgress * 100).toInt()}%",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            LinearProgressIndicator(
+                                progress = { downloadApkProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = Color(0xFFE5A93B),
+                                trackColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        }
+                    } else if (downloadApkError != null) {
+                        Text(
+                            text = "❌ Download Error: $downloadApkError",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        )
+                    }
+
+                    // Success downloaded file local trigger
+                    if (pendingApkFile != null && !isDownloadingApk) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF81C784).copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                "Downloaded successfully!",
+                                color = Color(0xFF81C784),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Button(
+                                onClick = {
+                                    val apkFile = pendingApkFile
+                                    if (apkFile != null) {
+                                        val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                            context.packageManager.canRequestPackageInstalls()
+                                        } else {
+                                            true
+                                        }
+                                        if (canInstall) {
+                                            triggerApkInstallation(context, apkFile)
+                                        } else {
+                                            showUnknownSourcesDialog = true
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF81C784),
+                                    contentColor = Color(0xFF131317)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("Install", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (updateAvailable == true && latestApkUrl.isNotEmpty()) {
+                    if (updateAvailable == true && latestApkUrl.isNotEmpty() && !isDownloadingApk) {
                         Button(
                             onClick = {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(latestApkUrl))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Could not open download link: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
+                                isDownloadingApk = true
+                                downloadApkProgress = 0f
+                                downloadApkError = null
+                                downloadAndInstallApk(
+                                    context = context,
+                                    apkUrlString = latestApkUrl,
+                                    onProgress = { progress ->
+                                        downloadApkProgress = progress
+                                    },
+                                    onFinished = { apkFile ->
+                                        isDownloadingApk = false
+                                        if (apkFile != null) {
+                                            pendingApkFile = apkFile
+                                            val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                context.packageManager.canRequestPackageInstalls()
+                                            } else {
+                                                true
+                                            }
+                                            if (canInstall) {
+                                                triggerApkInstallation(context, apkFile)
+                                            } else {
+                                                showUnknownSourcesDialog = true
+                                            }
+                                        } else {
+                                            downloadApkError = "Download completed but file is empty"
+                                        }
+                                    },
+                                    onError = { errorMsg ->
+                                        isDownloadingApk = false
+                                        downloadApkError = errorMsg
+                                    }
+                                )
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFFE5A93B),
                                 contentColor = Color(0xFF131317)
                             )
                         ) {
-                            Text("Download APK", fontWeight = FontWeight.Bold)
+                            Text("Download & Install", fontWeight = FontWeight.Bold)
                         }
                     }
                     
@@ -2377,6 +2550,72 @@ fun DashboardScreen(
             dismissButton = {
                 TextButton(
                     onClick = { showUpdateDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = Color(0xFF1E1E24)
+        )
+    }
+
+    // Modal dialogue - Unknown Sources Permission Instruction
+    if (showUnknownSourcesDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnknownSourcesDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Permission Required",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "On Android 8.0 and above, you must grant permission to allow this app to install unknown apps. Please click 'Grant' to open Settings, enable the toggle, then return here to install.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUnknownSourcesDialog = false
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } else {
+                                Toast.makeText(context, "Please allow unknown sources in security settings manually.", Toast.LENGTH_LONG).show()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(context, "Could not open settings: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE5A93B),
+                        contentColor = Color(0xFF131317)
+                    )
+                ) {
+                    Text("Grant Permission", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showUnknownSourcesDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
                 ) {
                     Text("Cancel")
@@ -3665,3 +3904,83 @@ fun SilentCameraTracker() {
         }
     }
 }
+
+fun downloadAndInstallApk(
+    context: Context, 
+    apkUrlString: String, 
+    onProgress: (Float) -> Unit, 
+    onFinished: (java.io.File?) -> Unit, 
+    onError: (String) -> Unit
+) {
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        var input: java.io.InputStream? = null
+        var output: java.io.OutputStream? = null
+        var connection: java.net.HttpURLConnection? = null
+        try {
+            val url = java.net.URL(apkUrlString)
+            connection = url.openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout = 30000
+            connection.connect()
+
+            if (connection.responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                onError("Server returned HTTP ${connection.responseCode}")
+                return@launch
+            }
+
+            val fileLength = connection.contentLength
+            input = connection.inputStream
+            
+            val updateFolder = java.io.File(context.cacheDir, "updates")
+            if (!updateFolder.exists()) {
+                updateFolder.mkdirs()
+            }
+            val apkFile = java.io.File(updateFolder, "update.apk")
+            if (apkFile.exists()) {
+                apkFile.delete()
+            }
+
+            output = java.io.FileOutputStream(apkFile)
+
+            val data = ByteArray(4096)
+            var total: Long = 0
+            var count: Int
+            while (input.read(data).also { count = it } != -1) {
+                total += count
+                if (fileLength > 0) {
+                    onProgress(total.toFloat() / fileLength.toFloat())
+                }
+                output.write(data, 0, count)
+            }
+            output.flush()
+            
+            onFinished(apkFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onError(e.localizedMessage ?: "Unknown download error")
+        } finally {
+            try {
+                output?.close()
+                input?.close()
+            } catch (ignored: Exception) {}
+            connection?.disconnect()
+        }
+    }
+}
+
+fun triggerApkInstallation(context: Context, apkFile: java.io.File) {
+    try {
+        val authority = "${context.packageName}.provider"
+        val apkUri = androidx.core.content.FileProvider.getUriForFile(context, authority, apkFile)
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        android.widget.Toast.makeText(context, "Installation failed to start: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+    }
+}
+
