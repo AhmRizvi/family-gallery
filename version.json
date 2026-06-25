@@ -1,6 +1,6 @@
 {
-  "versionCode": 3,
-  "versionName": "3.1",
+  "versionCode": 4,
+  "versionName": "4.1",
   "apkUrl": "https://github.com/AhmRizvi/family-gallery/releases/download/v3.0/app-release.apk",
   "forceUpdate": true,
   "changelog": "Critical performance improvements and mandatory security updates."
