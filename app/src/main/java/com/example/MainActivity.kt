@@ -1214,6 +1214,117 @@ fun DashboardScreen(
     var enteredSecretCode by remember { mutableStateOf("") }
     var secretCodeErrorVisible by remember { mutableStateOf(false) }
 
+    // App Self-Update facility states
+    val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    var updateUrl by remember { mutableStateOf(prefs.getString("update_url", "https://raw.githubusercontent.com/rizviahm6/family-gallery/main/update.json") ?: "https://raw.githubusercontent.com/rizviahm6/family-gallery/main/update.json") }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateErrorState by remember { mutableStateOf<String?>(null) }
+    var updateAvailable by remember { mutableStateOf<Boolean?>(null) } // null = unchecked, true = update available, false = up to date
+    var latestVersionName by remember { mutableStateOf("") }
+    var latestVersionCode by remember { mutableStateOf(0) }
+    var latestApkUrl by remember { mutableStateOf("") }
+    var latestChangelog by remember { mutableStateOf("") }
+    var backgroundUpdateBadgeActive by remember { mutableStateOf(false) }
+
+    fun performManualUpdateCheck() {
+        isCheckingUpdate = true
+        updateErrorState = null
+        updateAvailable = null
+        
+        // Save current update URL configuration
+        prefs.edit().putString("update_url", updateUrl).apply()
+        
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val urlConn = java.net.URL(updateUrl).openConnection() as java.net.HttpURLConnection
+                urlConn.connectTimeout = 8000
+                urlConn.readTimeout = 8000
+                urlConn.requestMethod = "GET"
+                val code = urlConn.responseCode
+                if (code == 200) {
+                    val response = urlConn.inputStream.bufferedReader().use { it.readText() }
+                    val json = org.json.JSONObject(response)
+                    val remoteVersionCode = json.optInt("versionCode", 0)
+                    val remoteVersionName = json.optString("versionName", "")
+                    val remoteApkUrl = json.optString("apkUrl", "")
+                    val remoteChangelog = json.optString("changelog", "")
+                    
+                    val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                    
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        isCheckingUpdate = false
+                        latestVersionCode = remoteVersionCode
+                        latestVersionName = remoteVersionName
+                        latestApkUrl = remoteApkUrl
+                        latestChangelog = remoteChangelog
+                        
+                        if (remoteVersionCode > currentVersionCode) {
+                            updateAvailable = true
+                            backgroundUpdateBadgeActive = true
+                        } else {
+                            updateAvailable = false
+                            backgroundUpdateBadgeActive = false
+                        }
+                    }
+                } else {
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        isCheckingUpdate = false
+                        updateErrorState = "Server returned error code: $code"
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    isCheckingUpdate = false
+                    updateErrorState = "Failed to connect: ${e.message}"
+                }
+            }
+        }
+    }
+
+    // Silent check for update on dashboard open to show badge indicator
+    LaunchedEffect(Unit) {
+        if (isNetworkAvailable(context)) {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val urlConn = java.net.URL(updateUrl).openConnection() as java.net.HttpURLConnection
+                    urlConn.connectTimeout = 5000
+                    urlConn.readTimeout = 5000
+                    urlConn.requestMethod = "GET"
+                    val code = urlConn.responseCode
+                    if (code == 200) {
+                        val response = urlConn.inputStream.bufferedReader().use { it.readText() }
+                        val json = org.json.JSONObject(response)
+                        val remoteVersionCode = json.optInt("versionCode", 0)
+                        val remoteVersionName = json.optString("versionName", "")
+                        val remoteApkUrl = json.optString("apkUrl", "")
+                        val remoteChangelog = json.optString("changelog", "")
+                        
+                        val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                        
+                        if (remoteVersionCode > currentVersionCode) {
+                            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                backgroundUpdateBadgeActive = true
+                                latestVersionCode = remoteVersionCode
+                                latestVersionName = remoteVersionName
+                                latestApkUrl = remoteApkUrl
+                                latestChangelog = remoteChangelog
+                                updateAvailable = true
+                            }
+                        } else {
+                            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                updateAvailable = false
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     // Init location query on load (safely)
     LaunchedEffect(Unit) {
         if (hasLocationPermissions(context)) {
@@ -1648,6 +1759,32 @@ fun DashboardScreen(
                             tint = Color(0xFFE5A93B)
                         )
                     }
+
+                    // System update check button with notification badge
+                    Box(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = {
+                                showUpdateDialog = true
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "Check for Updates",
+                                tint = if (backgroundUpdateBadgeActive) Color(0xFFE5A93B) else Color.White.copy(alpha = 0.8f)
+                            )
+                        }
+                        if (backgroundUpdateBadgeActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(Color(0xFFE57373), shape = CircleShape)
+                                    .align(Alignment.TopEnd)
+                            )
+                        }
+                    }
                     
                     IconButton(onClick = onLogout) {
                         Icon(
@@ -2060,6 +2197,186 @@ fun DashboardScreen(
                         enteredSecretCode = ""
                         secretCodeErrorVisible = false
                     },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = Color(0xFF1E1E24)
+        )
+    }
+
+    // Modal dialogue - App Self-Update Facility
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = Color(0xFFE5A93B),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "App Self-Update Facility",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Because this is a private family application hosted on Git, you can check for updates and update your application directly here.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+
+                    // Current version details
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Current Version", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+                            Text("V${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        
+                        if (updateAvailable == false) {
+                            Text(
+                                "Up to Date",
+                                color = Color(0xFF81C784),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else if (updateAvailable == true) {
+                            Text(
+                                "Update Available!",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Update URL Configuration
+                    OutlinedTextField(
+                        value = updateUrl,
+                        onValueChange = { updateUrl = it },
+                        label = { Text("Update manifest URL", fontSize = 12.sp) },
+                        placeholder = { Text("https://example.com/update.json") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFE5A93B),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedLabelColor = Color(0xFFE5A93B)
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Check results / changelog / loaders
+                    if (isCheckingUpdate) {
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFFE5A93B), modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Checking updates on remote server...", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                        }
+                    } else if (updateErrorState != null) {
+                        Text(
+                            text = "❌ Error: $updateErrorState",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        )
+                    } else if (updateAvailable == true) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFE5A93B).copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = "New Version Detected: V$latestVersionName (Build $latestVersionCode)",
+                                color = Color(0xFFE5A93B),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (latestChangelog.isNotEmpty()) {
+                                Text(
+                                    text = latestChangelog,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    } else if (updateAvailable == false) {
+                        Text(
+                            text = "✅ Your app is perfectly up-to-date with latest releases.",
+                            color = Color(0xFF81C784),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (updateAvailable == true && latestApkUrl.isNotEmpty()) {
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(latestApkUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open download link: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE5A93B),
+                                contentColor = Color(0xFF131317)
+                            )
+                        ) {
+                            Text("Download APK", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    
+                    Button(
+                        onClick = {
+                            performManualUpdateCheck()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (updateAvailable == true) Color.White.copy(alpha = 0.1f) else Color(0xFFE5A93B),
+                            contentColor = if (updateAvailable == true) Color.White else Color(0xFF131317)
+                        ),
+                        enabled = !isCheckingUpdate
+                    ) {
+                        Text("Check Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showUpdateDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
                 ) {
                     Text("Cancel")
