@@ -1,6 +1,6 @@
 {
   "versionCode": 3,
   "versionName": "3.0",
-  "apkUrl": "https://github.com/AhmRizvi/family-gallery/releases/download/v3.0/app-release.apk",
+  "apkUrl": "https://github.com/rizviahm6/family-gallery/raw/main/app-release.apk",
   "changelog": "🚀 Secure System Update:\n- Integrated direct APK download & automatic in-app installation!\n- Added Install Unknown Sources permission guidance.\n- Enabled real-time notification badge on the update icon.\n- Built with Material 3 standard Edge-to-Edge components."
 }
