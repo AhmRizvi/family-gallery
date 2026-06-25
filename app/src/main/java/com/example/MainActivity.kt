@@ -2292,32 +2292,7 @@ fun DashboardScreen(
                         )
                     }
 
-                    // System update check button with notification badge
-                    Box(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        IconButton(
-                            onClick = {
-                                onShowUpdateDialog()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "Check for Updates",
-                                tint = if (backgroundUpdateBadgeActive) Color(0xFFD68A1B) else Color(0xFF1E1E24).copy(alpha = 0.7f)
-                            )
-                        }
-                        if (backgroundUpdateBadgeActive) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(Color(0xFFD32F2F), shape = CircleShape)
-                                    .align(Alignment.TopEnd)
-                            )
-                        }
-                    }
-                    
+
                     IconButton(onClick = onLogout) {
                         Icon(
                             imageVector = Icons.Default.Logout,
