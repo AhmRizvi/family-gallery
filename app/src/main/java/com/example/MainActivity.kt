@@ -819,15 +819,9 @@ fun FamilyGalleryApp() {
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 ) {
-                    Text(
-                        text = "Because this is a private family application hosted on Git, you can check for updates and update your application directly here.",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 12.sp
-                    )
-
                     if (isForceUpdate) {
                         Text(
-                            text = "⚠️ CRITICAL FORCE UPDATE REQUIRED\nAn essential update is available. You must install the update before continuing to use the application.",
+                            text = "⚠️ CRITICAL FORCE UPDATE REQUIRED\nAn essential update is available. You must install this update to continue using Family Gallery.",
                             color = Color(0xFFFF8A80),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -838,114 +832,34 @@ fun FamilyGalleryApp() {
                         )
                     }
 
-                    // Current version details
+                    // Elegant Version Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
-                            .padding(10.dp),
+                            .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Current Version", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                            Text("V${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Current Version", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+                            Text("V${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         }
                         
-                        if (updateAvailable == false) {
-                            Text(
-                                "Up to Date",
-                                color = Color(0xFF81C784),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else if (updateAvailable == true) {
-                            Text(
-                                "Update Available!",
-                                color = Color(0xFFE5A93B),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // Update URL Configuration
-                    OutlinedTextField(
-                        value = updateUrl,
-                        onValueChange = { updateUrl = it },
-                        label = { Text("Update manifest URL", fontSize = 12.sp) },
-                        placeholder = { Text("https://example.com/version.json") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFFE5A93B),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedLabelColor = Color(0xFFE5A93B)
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // How to publish instructions guide (collapsible)
-                    var showGuide by remember { mutableStateOf(false) }
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        val statusText = if (updateAvailable == false) "Up to Date" else "New Version Available"
+                        val statusColor = if (updateAvailable == false) Color(0xFF81C784) else Color(0xFFE5A93B)
+                        
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showGuide = !showGuide }
-                                .padding(vertical = 4.dp)
+                                .background(statusColor.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Icon(
-                                imageVector = if (showGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                tint = Color(0xFFE5A93B),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "How to publish updates from GitHub?",
-                                color = Color(0xFFE5A93B),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text = statusText,
+                                color = statusColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                        }
-                        if (showGuide) {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 22.dp, top = 4.dp, bottom = 8.dp)
-                            ) {
-                                Text(
-                                    "1. Build your updated APK in AI Studio, download it, and rename it to 'app-release.apk'.",
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontSize = 11.sp
-                                )
-                                Text(
-                                    "2. Upload/commit both 'app-release.apk' and 'version.json' to your GitHub repository (AhmRizvi/family-gallery) under 'main' branch.",
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontSize = 11.sp
-                                )
-                                Text(
-                                    "3. Example format for 'version.json':",
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                SelectionContainer {
-                                    Text(
-                                        "{\n  \"versionCode\": 3,\n  \"versionName\": \"3.0\",\n  \"apkUrl\": \"https://github.com/AhmRizvi/family-gallery/releases/download/v3.0/app-release.apk\",\n  \"forceUpdate\": true,\n  \"changelog\": \"Critical performance improvements and mandatory security updates.\"\n}",
-                                        color = Color(0xFFE5A93B),
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color.Black.copy(alpha = 0.3f), shape = RoundedCornerShape(4.dp))
-                                            .padding(6.dp)
-                                    )
-                                }
-                            }
                         }
                     }
 
