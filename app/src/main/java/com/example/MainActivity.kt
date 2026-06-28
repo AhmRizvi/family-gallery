@@ -1353,7 +1353,7 @@ fun LoginScreen(
                 modifier = Modifier.padding(vertical = 24.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.LockPerson,
+                    imageVector = Icons.Default.Camera,
                     contentDescription = null,
                     tint = Color(0xFFE5A93B),
                     modifier = Modifier.size(56.dp)
