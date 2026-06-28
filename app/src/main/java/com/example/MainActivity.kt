@@ -1802,8 +1802,8 @@ fun DashboardScreen(
                 
                 if (result != null) {
                     val localTs = prefs.getLong("shared_notif_timestamp", 0L)
-                    // If network notification is newer, save and update UI
-                    if (result.third > localTs) {
+                    // Sync if network has a newer notification, OR if local memory is empty and it hasn't been dismissed
+                    if (result.third > localTs || (activeNotification == null && result.third > dismissedTimestamp)) {
                         prefs.edit()
                             .putString("shared_notif_title", result.first)
                             .putString("shared_notif_body", result.second)
@@ -4056,8 +4056,8 @@ fun fetchAppNotification(
         attempts++
         var conn: java.net.HttpURLConnection? = null
         try {
-            // Use cache-busting query parameter to completely bypass carrier/proxy cache
-            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif?t=" + System.currentTimeMillis())
+            // Use stable key URL, using request headers to bypass local caching
+            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
             conn = url.openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 8000
