@@ -1758,6 +1758,67 @@ fun DashboardScreen(
     var enteredSecretCode by remember { mutableStateOf("") }
     var secretCodeErrorVisible by remember { mutableStateOf(false) }
 
+    // Notification system state variables
+    val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    val coroutineScope = rememberCoroutineScope()
+    var dismissedTimestamp by remember { mutableStateOf(prefs.getLong("dismissed_notification_timestamp", 0L)) }
+    
+    // Initial load from SharedPreferences for instant local/offline display
+    var activeNotification by remember {
+        mutableStateOf<Triple<String, String, Long>?>(
+            run {
+                val title = prefs.getString("shared_notif_title", "") ?: ""
+                val body = prefs.getString("shared_notif_body", "") ?: ""
+                val ts = prefs.getLong("shared_notif_timestamp", 0L)
+                if (title.isNotEmpty()) Triple(title, body, ts) else null
+            }
+        )
+    }
+    
+    var showNotificationDialog by remember { mutableStateOf(false) }
+    var postTitle by remember { mutableStateOf("") }
+    var postBody by remember { mutableStateOf("") }
+    var isPostingNotification by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    var titleRes = ""
+                    var bodyRes = ""
+                    var timeRes = 0L
+                    var success = false
+                    fetchAppNotification(
+                        onSuccess = { title, body, timestamp ->
+                            titleRes = title
+                            bodyRes = body
+                            timeRes = timestamp
+                            success = true
+                        },
+                        onFailure = {}
+                    )
+                    if (success) Triple(titleRes, bodyRes, timeRes) else null
+                }
+                
+                if (result != null) {
+                    val localTs = prefs.getLong("shared_notif_timestamp", 0L)
+                    // If network notification is newer, save and update UI
+                    if (result.third > localTs) {
+                        prefs.edit()
+                            .putString("shared_notif_title", result.first)
+                            .putString("shared_notif_body", result.second)
+                            .putLong("shared_notif_timestamp", result.third)
+                            .apply()
+                        activeNotification = result
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            delay(15000) // Poll every 15 seconds
+        }
+    }
+
 
 
     // Init location query on load (safely)
@@ -2173,6 +2234,23 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    if (loggedInUser == "gallery") {
+                        IconButton(
+                            onClick = {
+                                postTitle = ""
+                                postBody = ""
+                                showNotificationDialog = true
+                            },
+                            modifier = Modifier.testTag("broadcast_notification_trigger")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Campaign,
+                                contentDescription = "Broadcast Notification",
+                                tint = Color(0xFFE5A93B)
+                            )
+                        }
+                    }
+
                     // Lock icon leading to secret vault dialog
                     IconButton(
                         onClick = {
@@ -2316,6 +2394,93 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Active Broad-cast In-App Notification Banner
+            val currentNotif = activeNotification
+            if (currentNotif != null && currentNotif.first.isNotEmpty() && currentNotif.third > dismissedTimestamp) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("notification_banner"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFF3CD) // Warm accent background
+                    ),
+                    border = BorderStroke(1.dp, Color(0xFFD68A1B).copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFFD68A1B).copy(alpha = 0.15f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Campaign,
+                                    contentDescription = "Notification Announcement",
+                                    tint = Color(0xFFD68A1B),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Family Announcement",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF856404),
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = currentNotif.first,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF856404),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    prefs.edit().putLong("dismissed_notification_timestamp", currentNotif.third).apply()
+                                    dismissedTimestamp = currentNotif.third
+                                },
+                                modifier = Modifier.testTag("dismiss_notification_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss notification",
+                                    tint = Color(0xFF856404).copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = currentNotif.second,
+                            fontSize = 13.sp,
+                            color = Color(0xFF856404).copy(alpha = 0.9f)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val dateString = try {
+                            val sdf = java.text.SimpleDateFormat("MMM dd, yyyy - hh:mm a", java.util.Locale.getDefault())
+                            sdf.format(java.util.Date(currentNotif.third))
+                        } catch (e: Exception) {
+                            "Just now"
+                        }
+                        Text(
+                            text = "Posted: $dateString",
+                            fontSize = 10.sp,
+                            color = Color(0xFF856404).copy(alpha = 0.6f),
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
+                }
+            }
+
             if (loggedInUser == "gallery") {
                 // Location HUD Dashboard Ribbon to meet condition: "show user location in the ui"
                 Card(
@@ -2516,6 +2681,143 @@ fun DashboardScreen(
             },
             containerColor = Color(0xFF1E1E24),
             shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showNotificationDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotificationDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Campaign,
+                        contentDescription = null,
+                        tint = Color(0xFFE5A93B),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Broadcast Announcement",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E1E24)
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Broadcast an announcement or alert to all family members using the app. This notification will appear instantly on their screens.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF1E1E24).copy(alpha = 0.6f)
+                    )
+                    
+                    OutlinedTextField(
+                        value = postTitle,
+                        onValueChange = { postTitle = it },
+                        label = { Text("Title") },
+                        placeholder = { Text("Enter alert title (e.g., Dinner Time!)") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("notification_title_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFE5A93B),
+                            focusedLabelColor = Color(0xFFE5A93B)
+                        )
+                    )
+                    
+                    OutlinedTextField(
+                        value = postBody,
+                        onValueChange = { postBody = it },
+                        label = { Text("Message") },
+                        placeholder = { Text("Enter detailed description here...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .testTag("notification_body_input"),
+                        maxLines = 4,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFE5A93B),
+                            focusedLabelColor = Color(0xFFE5A93B)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val titleText = postTitle.trim()
+                        val bodyText = postBody.trim()
+                        if (titleText.isEmpty() || bodyText.isEmpty()) {
+                            Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        
+                        isPostingNotification = true
+                        val currentTimestamp = System.currentTimeMillis()
+                        
+                        // 1. Instantly save in SharedPreferences and update local activeNotification state (Main thread)
+                        prefs.edit()
+                            .putString("shared_notif_title", titleText)
+                            .putString("shared_notif_body", bodyText)
+                            .putLong("shared_notif_timestamp", currentTimestamp)
+                            .apply()
+                        
+                        activeNotification = Triple(titleText, bodyText, currentTimestamp)
+                        
+                        // 2. Launch background coroutine to sync with KVDB and handle UI states safely on Main
+                        coroutineScope.launch {
+                            val success = withContext(Dispatchers.IO) {
+                                var saveSuccess = false
+                                saveAppNotification(
+                                    title = titleText,
+                                    body = bodyText,
+                                    timestamp = currentTimestamp,
+                                    onSuccess = { saveSuccess = true },
+                                    onFailure = {}
+                                )
+                                saveSuccess
+                            }
+                            
+                            isPostingNotification = false
+                            showNotificationDialog = false
+                            if (success) {
+                                Toast.makeText(context, "Notification broadcasted successfully!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Broadcasted locally, but remote sync failed.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE5A93B)
+                    ),
+                    modifier = Modifier.testTag("notification_post_confirm")
+                ) {
+                    if (isPostingNotification) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Post Alert", color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showNotificationDialog = false },
+                    modifier = Modifier.testTag("notification_post_cancel")
+                ) {
+                    Text("Cancel", color = Color(0xFF1E1E24).copy(alpha = 0.6f))
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 
@@ -3740,6 +4042,80 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
         return Pair(200, "Success (Max redirects exceeded but initial upload completed)")
     }
     return Pair(400, "Max redirects exceeded")
+}
+
+fun fetchAppNotification(
+    onSuccess: (title: String, body: String, timestamp: Long) -> Unit,
+    onFailure: (String) -> Unit
+) {
+    try {
+        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.doInput = true
+        val responseCode = conn.responseCode
+        if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+            if (responseText.trim().isNotEmpty()) {
+                val json = org.json.JSONObject(responseText)
+                val title = json.optString("title", "")
+                val body = json.optString("body", "")
+                val timestamp = json.optLong("timestamp", 0L)
+                onSuccess(title, body, timestamp)
+            } else {
+                onFailure("No notification found")
+            }
+        } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
+            onFailure("No notification posted yet")
+        } else {
+            onFailure("Server returned error code $responseCode")
+        }
+        conn.disconnect()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        onFailure(e.localizedMessage ?: "Unknown network error")
+    }
+}
+
+fun saveAppNotification(
+    title: String,
+    body: String,
+    timestamp: Long,
+    onSuccess: () -> Unit,
+    onFailure: (String) -> Unit
+) {
+    try {
+        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        
+        val json = org.json.JSONObject().apply {
+            put("title", title)
+            put("body", body)
+            put("timestamp", timestamp)
+        }
+        
+        conn.outputStream.use { os ->
+            os.write(json.toString().toByteArray(Charsets.UTF_8))
+        }
+        
+        val responseCode = conn.responseCode
+        if (responseCode in 200..299) {
+            onSuccess()
+        } else {
+            onFailure("Server returned error code $responseCode")
+        }
+        conn.disconnect()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        onFailure(e.localizedMessage ?: "Unknown network error")
+    }
 }
 
 fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
