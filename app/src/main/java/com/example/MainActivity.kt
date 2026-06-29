@@ -1336,8 +1336,8 @@ fun LoginScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFF232530),
-                        Color(0xFF121214)
+                        Color(0xFFFFFDF9), // Premium soft warm gold cream
+                        Color(0xFFFAF6EB)  // Deeper soft gold cream
                     )
                 )
             )
@@ -1364,13 +1364,13 @@ fun LoginScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Navigate back",
-                        tint = Color.White
+                        tint = AppDarkColor
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Welcome Back",
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = AppDarkColor.copy(alpha = 0.8f),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -1392,7 +1392,7 @@ fun LoginScreen(
 
                 Text(
                     text = "Authorized Entry",
-                    color = Color.White,
+                    color = AppDarkColor,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.5).sp
@@ -1400,7 +1400,7 @@ fun LoginScreen(
 
                 Text(
                     text = "Verify credentials and security clearances to access family memories.",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = AppDarkColor.copy(alpha = 0.6f),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
@@ -1411,8 +1411,8 @@ fun LoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1A1A1E), shape = RoundedCornerShape(24.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(24.dp))
+                    .background(Color.White, shape = RoundedCornerShape(24.dp))
+                    .border(1.dp, AppPrimaryColor.copy(alpha = 0.2f), shape = RoundedCornerShape(24.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -1425,18 +1425,18 @@ fun LoginScreen(
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AppPrimaryColor,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        unfocusedBorderColor = AppDarkColor.copy(alpha = 0.2f),
                         focusedLabelColor = AppPrimaryColor,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
+                        unfocusedLabelColor = AppDarkColor.copy(alpha = 0.5f),
+                        focusedTextColor = AppDarkColor,
+                        unfocusedTextColor = AppDarkColor
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("username_input"),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     leadingIcon = {
-                        Icon(Icons.Default.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.4f))
+                        Icon(Icons.Default.Person, contentDescription = null, tint = AppDarkColor.copy(alpha = 0.4f))
                     }
                 )
 
@@ -1450,11 +1450,11 @@ fun LoginScreen(
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AppPrimaryColor,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        unfocusedBorderColor = AppDarkColor.copy(alpha = 0.2f),
                         focusedLabelColor = AppPrimaryColor,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
+                        unfocusedLabelColor = AppDarkColor.copy(alpha = 0.5f),
+                        focusedTextColor = AppDarkColor,
+                        unfocusedTextColor = AppDarkColor
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1465,12 +1465,12 @@ fun LoginScreen(
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                tint = Color.White.copy(alpha = 0.4f)
+                                tint = AppDarkColor.copy(alpha = 0.4f)
                             )
                         }
                     },
                     leadingIcon = {
-                        Icon(Icons.Default.Password, contentDescription = null, tint = Color.White.copy(alpha = 0.4f))
+                        Icon(Icons.Default.Password, contentDescription = null, tint = AppDarkColor.copy(alpha = 0.4f))
                     }
                 )
 
@@ -1480,13 +1480,13 @@ fun LoginScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF26262B), shape = RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFAF7F0), shape = RoundedCornerShape(12.dp))
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = "Access Approvals Required",
-                        color = Color.White,
+                        color = AppDarkColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -1509,7 +1509,7 @@ fun LoginScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Device GPS Coordinate Location",
-                                color = Color.White,
+                                color = AppDarkColor,
                                 fontSize = 12.sp
                             )
                         }
@@ -1544,7 +1544,7 @@ fun LoginScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Gallery Storage Media Access",
-                                color = Color.White,
+                                color = AppDarkColor,
                                 fontSize = 12.sp
                             )
                         }
@@ -1579,7 +1579,7 @@ fun LoginScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Camera Hardware Access",
-                                color = Color.White,
+                                color = AppDarkColor,
                                 fontSize = 12.sp
                             )
                         }
@@ -1682,14 +1682,14 @@ fun LoginScreen(
                 Text(
                     text = "GPS Services Required",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = AppDarkColor,
                     textAlign = TextAlign.Center
                 )
             },
             text = {
                 Text(
                     text = "Your device's GPS or Location Services are currently turned off. To locate the family archivist and coordinates, please turn on GPS/Location Services.",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = AppDarkColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp
                 )
@@ -1705,15 +1705,15 @@ fun LoginScreen(
                         showGpsDisabledDialog = false
                     }
                 ) {
-                    Text("Turn On GPS", color = Color(0xFF81C784))
+                    Text("Turn On GPS", color = Color(0xFF2E7D32))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showGpsDisabledDialog = false }) {
-                    Text("Later", color = Color.White.copy(alpha = 0.6f))
+                    Text("Later", color = AppDarkColor.copy(alpha = 0.6f))
                 }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = Color.White,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -2953,7 +2953,7 @@ fun DashboardScreen(
 
                     Text(
                         text = p.title,
-                        color = Color.White,
+                        color = AppDarkColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         textAlign = TextAlign.Center,
@@ -2967,25 +2967,25 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Schedule, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Schedule, contentDescription = null, tint = AppDarkColor.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = p.date,
-                            color = Color.White.copy(alpha = 0.4f),
+                            color = AppDarkColor.copy(alpha = 0.6f),
                             fontSize = 12.sp
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Icon(Icons.Default.Place, contentDescription = null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Place, contentDescription = null, tint = AppDarkColor.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = p.location,
-                            color = Color.White.copy(alpha = 0.4f),
+                            color = AppDarkColor.copy(alpha = 0.6f),
                             fontSize = 12.sp
                         )
                     }
                 }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = Color.White,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -3005,14 +3005,14 @@ fun DashboardScreen(
                 Text(
                     text = "GPS Services Required",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = AppDarkColor,
                     textAlign = TextAlign.Center
                 )
             },
             text = {
                 Text(
                     text = "Your device's GPS or Location Services are currently turned off. To locate the family archivist and coordinates, please turn on GPS/Location Services.",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = AppDarkColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp
                 )
@@ -3028,15 +3028,15 @@ fun DashboardScreen(
                         showGpsDisabledDialog = false
                     }
                 ) {
-                    Text("Turn On GPS", color = Color(0xFF81C784))
+                    Text("Turn On GPS", color = Color(0xFF2E7D32))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showGpsDisabledDialog = false }) {
-                    Text("Later", color = Color.White.copy(alpha = 0.6f))
+                    Text("Later", color = AppDarkColor.copy(alpha = 0.6f))
                 }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = Color.White,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -3269,7 +3269,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color(0xFF101012), // Deep mysterious black
+        containerColor = AppLightBg, // Clean bright theme background
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
@@ -3278,20 +3278,20 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                         Icon(
                             imageVector = Icons.Default.VpnKey,
                             contentDescription = null,
-                            tint = Color(0xFF81C784),
+                            tint = Color(0xFF2E7D32),
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
                                 text = "Secret Family Archive",
-                                color = Color.White,
+                                color = AppDarkColor,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             )
                             Text(
                                 text = "Decrypted session active",
-                                color = Color(0xFF81C784),
+                                color = Color(0xFF2E7D32),
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -3303,13 +3303,13 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Return to Dashboard",
-                            tint = Color.White
+                            tint = AppDarkColor
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF16161A),
-                    titleContentColor = Color.White
+                    containerColor = Color.White,
+                    titleContentColor = AppDarkColor
                 )
             )
         }
@@ -3323,7 +3323,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1C3A27)) // Deep forest green secure color
+                    .background(Color(0xFFE8F5E9)) // Soft bright green secure color
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Row(
@@ -3332,13 +3332,13 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     Icon(
                         imageVector = Icons.Default.VerifiedUser,
                         contentDescription = "Encrypted Vault",
-                        tint = Color(0xFF81C784),
+                        tint = Color(0xFF2E7D32),
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Encrypted folders synced",
-                        color = Color(0xFFE2F3E7),
+                        color = Color(0xFF2E7D32),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -3358,13 +3358,13 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                         verticalArrangement = Arrangement.Center
                     ) {
                         CircularProgressIndicator(
-                            color = Color(0xFF81C784),
+                            color = AppPrimaryColor,
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "Syncing with secure vault...",
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = AppDarkColor.copy(alpha = 0.7f),
                             fontSize = 15.sp
                         )
                     }
@@ -3409,13 +3409,13 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.2f),
+                            tint = AppDarkColor.copy(alpha = 0.2f),
                             modifier = Modifier.size(64.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "Secret Vault is Empty",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = AppDarkColor.copy(alpha = 0.5f),
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3437,9 +3437,9 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                 .testTag("secret_photo_card_${photo.id}"),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFF1A1A1E)
+                                containerColor = Color.White
                             ),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                            border = BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.2f))
                         ) {
                             Column {
                                 Box(
@@ -3480,7 +3480,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                 ) {
                                     Text(
                                         text = photo.title,
-                                        color = Color.White,
+                                        color = AppDarkColor,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         maxLines = 1,
@@ -3503,7 +3503,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
             confirmButton = {
                 TextButton(
                     onClick = { selectedSecretPhotoForDetail = null },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
+                    colors = ButtonDefaults.textButtonColors(contentColor = AppPrimaryColor)
                 ) {
                     Text("Close", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
@@ -3526,7 +3526,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                                     contentDescription = p.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
-                               )
+                                )
                             } else {
                                 AsyncImage(
                                     model = p.identifier as String,
@@ -3542,7 +3542,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
 
                     Text(
                         text = p.title,
-                        color = Color.White,
+                        color = AppDarkColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         textAlign = TextAlign.Center,
@@ -3550,7 +3550,7 @@ fun SecretFolderScreen(onBack: () -> Unit) {
                     )
                 }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = Color.White,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -3601,14 +3601,14 @@ fun UploadScreen(
                 Text(
                     text = "Secured Upload Initialized",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = AppDarkColor,
                     textAlign = TextAlign.Center
                 )
             },
             text = {
                 Text(
                     text = "Family memories must undergo secure archival verification.\n\nIt takes 7 days to get in your apps. You can monitor progress in the 'Pending Uploads' queue inside the Dashboard.",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = AppDarkColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp
                 )
@@ -3624,29 +3624,30 @@ fun UploadScreen(
                     Text("Understood", fontWeight = FontWeight.Bold)
                 }
             },
-            containerColor = AppDarkColor
+            containerColor = Color.White,
+            shape = RoundedCornerShape(24.dp)
         )
     }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color(0xFF121214),
+        containerColor = AppLightBg,
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
-                title = { Text("Upload Memory", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text("Upload Memory", color = AppDarkColor, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = AppDarkColor
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF16161A),
-                    titleContentColor = Color.White
+                    containerColor = Color.White,
+                    titleContentColor = AppDarkColor
                 )
             )
         }
@@ -3663,7 +3664,8 @@ fun UploadScreen(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF16161A), shape = RoundedCornerShape(24.dp))
+                    .background(Color.White, shape = RoundedCornerShape(24.dp))
+                    .border(BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.15f)), shape = RoundedCornerShape(24.dp))
                     .padding(32.dp)
             ) {
                 // Large styled upload container containing state details
@@ -3685,7 +3687,7 @@ fun UploadScreen(
                 
                 Text(
                     text = if (selectedUri != null) "Memory Selected" else "Upload to Family Archive",
-                    color = Color.White,
+                    color = AppDarkColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -3700,7 +3702,7 @@ fun UploadScreen(
                     } else {
                         "Select photos from your device to preserve them securely in the family's cosmic archive."
                     },
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = AppDarkColor.copy(alpha = 0.6f),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
@@ -3728,7 +3730,7 @@ fun UploadScreen(
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
                         color = AppPrimaryColor,
-                        trackColor = Color.White.copy(alpha = 0.1f)
+                        trackColor = AppDarkColor.copy(alpha = 0.1f)
                     )
                 }
                 
