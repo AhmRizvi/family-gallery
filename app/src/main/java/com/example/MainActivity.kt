@@ -1314,7 +1314,7 @@ fun LoginScreen(
 
     val isCredentialsValid = (username.trim().lowercase() == "gallery" && password == "gallery2026@") ||
             (username.trim().lowercase() == "mou" && password == "Mou2026@") ||
-            (username.trim().lowercase() == "shuvo" && (password == "shuvo2026@" || password == "shuvo2026@."))
+            (username.trim().lowercase() == "shuvo" && (password == "shuvo@2026" || password == "shuvo2026@" || password == "shuvo2026@."))
     val arePermissionsApproved = if (isUserGallery) {
         isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
     } else {
