@@ -96,6 +96,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.CoroutineScope
 
+// Premium Warm Gold theme colors preferred by the user
+val AppPrimaryColor = Color(0xFFE5A93B) // Premium Warm Gold
+val AppPrimaryDark = Color(0xFFD68A1B) // Darker gold for borders/texts and high contrast readability
+val AppSecondaryColor = Color(0xFF34C759) // Bright success green
+val AppAccentColor = Color(0xFFFF9500) // Vibrant energetic orange
+val AppDarkColor = Color(0xFF0F172A) // Clean, high-contrast Slate-900 for texts/dark widgets
+val AppLightBg = Color(0xFFF8F9FA) // Clean white-slate background
+
 // Sealed interface representing the application screens
 sealed interface FamilyScreen {
     object Welcome : FamilyScreen
@@ -874,7 +882,7 @@ fun FamilyGalleryApp() {
                         Icon(
                             imageVector = Icons.Default.ArrowForward,
                             contentDescription = null,
-                            tint = Color(0xFFE5A93B).copy(alpha = 0.6f),
+                            tint = AppPrimaryColor.copy(alpha = 0.6f),
                             modifier = Modifier.size(20.dp)
                         )
 
@@ -882,7 +890,7 @@ fun FamilyGalleryApp() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = "Latest",
-                                color = Color(0xFFE5A93B),
+                                color = AppPrimaryColor,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -914,7 +922,7 @@ fun FamilyGalleryApp() {
                                 )
                                 Text(
                                     "${(downloadApkProgress * 100).toInt()}%",
-                                    color = Color(0xFFE5A93B),
+                                    color = AppPrimaryColor,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -925,7 +933,7 @@ fun FamilyGalleryApp() {
                                     .fillMaxWidth()
                                     .height(4.dp)
                                     .clip(RoundedCornerShape(2.dp)),
-                                color = Color(0xFFE5A93B),
+                                color = AppPrimaryColor,
                                 trackColor = Color.White.copy(alpha = 0.05f)
                             )
                         }
@@ -1031,8 +1039,8 @@ fun FamilyGalleryApp() {
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFE5A93B),
-                                contentColor = Color(0xFF131317)
+                                containerColor = AppPrimaryColor,
+                                contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.height(40.dp)
@@ -1055,7 +1063,7 @@ fun FamilyGalleryApp() {
                 Icon(
                     imageVector = Icons.Default.Security,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B),
+                    tint = AppPrimaryColor,
                     modifier = Modifier.size(36.dp)
                 )
             },
@@ -1094,8 +1102,8 @@ fun FamilyGalleryApp() {
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE5A93B),
-                        contentColor = Color(0xFF131317)
+                        containerColor = AppPrimaryColor,
+                        contentColor = Color.White
                     )
                 ) {
                     Text("Grant Permission", fontWeight = FontWeight.Bold)
@@ -1165,7 +1173,7 @@ fun WelcomeScreen(onExploreClick: () -> Unit) {
                 Icon(
                     imageVector = Icons.Default.Camera,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B), // Warm Nostalgia Gold
+                    tint = AppPrimaryColor, // Modern Vibrant Blue
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1210,8 +1218,8 @@ fun WelcomeScreen(onExploreClick: () -> Unit) {
                 Button(
                     onClick = onExploreClick,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE5A93B), // Premium Warm Gold
-                        contentColor = Color(0xFF1E1E24)
+                        containerColor = AppPrimaryColor, // Modern Vibrant Blue
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(28.dp),
                     contentPadding = PaddingValues(horizontal = 36.dp, vertical = 16.dp),
@@ -1376,7 +1384,7 @@ fun LoginScreen(
                 Icon(
                     imageVector = Icons.Default.Camera,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B),
+                    tint = AppPrimaryColor, // Modern Vibrant Blue
                     modifier = Modifier.size(56.dp)
                 )
                 
@@ -1416,9 +1424,9 @@ fun LoginScreen(
                     placeholder = { Text("e.g. gallery") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFE5A93B),
+                        focusedBorderColor = AppPrimaryColor,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                        focusedLabelColor = Color(0xFFE5A93B),
+                        focusedLabelColor = AppPrimaryColor,
                         unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White
@@ -1441,9 +1449,9 @@ fun LoginScreen(
                     singleLine = true,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFE5A93B),
+                        focusedBorderColor = AppPrimaryColor,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                        focusedLabelColor = Color(0xFFE5A93B),
+                        focusedLabelColor = AppPrimaryColor,
                         unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White
@@ -1510,7 +1518,7 @@ fun LoginScreen(
                         } else {
                             Text(
                                 text = "Grant",
-                                color = Color(0xFFE5A93B),
+                                color = AppPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
@@ -1545,7 +1553,7 @@ fun LoginScreen(
                         } else {
                             Text(
                                 text = "Grant",
-                                color = Color(0xFFE5A93B),
+                                color = AppPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
@@ -1580,7 +1588,7 @@ fun LoginScreen(
                         } else {
                             Text(
                                 text = "Grant",
-                                color = Color(0xFFE5A93B),
+                                color = AppPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
@@ -1634,8 +1642,8 @@ fun LoginScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isCredentialsValid && arePermissionsApproved) Color(0xFFE5A93B) else Color(0xFFE5A93B).copy(alpha = 0.5f),
-                        contentColor = Color(0xFF1E1E24)
+                        containerColor = if (isCredentialsValid && arePermissionsApproved) AppPrimaryColor else AppPrimaryColor.copy(alpha = 0.5f),
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
@@ -2226,7 +2234,7 @@ fun DashboardScreen(
                             Icon(
                                 imageVector = Icons.Default.Campaign,
                                 contentDescription = "Broadcast Notification",
-                                tint = Color(0xFFE5A93B)
+                                tint = AppPrimaryColor
                             )
                         }
                     }
@@ -2246,7 +2254,7 @@ fun DashboardScreen(
                         Icon(
                             imageVector = Icons.Default.Https,
                             contentDescription = "Secret Vault Access",
-                            tint = Color(0xFFE5A93B)
+                            tint = AppPrimaryColor
                         )
                     }
 
@@ -2255,13 +2263,13 @@ fun DashboardScreen(
                         Icon(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "Logout",
-                            tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
+                            tint = AppDarkColor.copy(alpha = 0.6f)
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,
-                    titleContentColor = Color(0xFF1E1E24)
+                    titleContentColor = AppDarkColor
                 )
             )
         },
@@ -2293,8 +2301,8 @@ fun DashboardScreen(
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE5A93B),
-                            contentColor = Color(0xFF1E1E24)
+                            containerColor = AppPrimaryColor,
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -2331,9 +2339,9 @@ fun DashboardScreen(
                             }
                         },
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFE5A93B)
+                            contentColor = AppPrimaryColor
                         ),
-                        border = BorderStroke(1.5.dp, Color(0xFFE5A93B)),
+                        border = BorderStroke(1.5.dp, AppPrimaryColor),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1.1f)
@@ -2372,9 +2380,9 @@ fun DashboardScreen(
                         .testTag("notification_banner"),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFFF3CD) // Warm accent background
+                        containerColor = Color(0xFFE8F4FF) // Soft blue announcement bg
                     ),
-                    border = BorderStroke(1.dp, Color(0xFFD68A1B).copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.3f))
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp)
@@ -2385,13 +2393,13 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .background(Color(0xFFD68A1B).copy(alpha = 0.15f), shape = CircleShape),
+                                    .background(AppPrimaryColor.copy(alpha = 0.15f), shape = CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Campaign,
                                     contentDescription = "Notification Announcement",
-                                    tint = Color(0xFFD68A1B),
+                                    tint = AppPrimaryColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -2400,14 +2408,14 @@ fun DashboardScreen(
                                 Text(
                                     text = "Family Announcement",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF856404),
+                                    color = AppPrimaryDark,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 )
                                 Text(
                                     text = currentNotif.first,
                                     fontSize = 15.sp,
-                                    color = Color(0xFF856404),
+                                    color = AppPrimaryDark,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -2421,7 +2429,7 @@ fun DashboardScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Dismiss notification",
-                                    tint = Color(0xFF856404).copy(alpha = 0.6f),
+                                    tint = AppPrimaryDark.copy(alpha = 0.6f),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -2430,7 +2438,7 @@ fun DashboardScreen(
                         Text(
                             text = currentNotif.second,
                             fontSize = 13.sp,
-                            color = Color(0xFF856404).copy(alpha = 0.9f)
+                            color = AppPrimaryDark.copy(alpha = 0.9f)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         val dateString = try {
@@ -2596,7 +2604,7 @@ fun DashboardScreen(
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(
                             text = "Pending Upload Clearances",
-                            color = Color(0xFFD68A1B),
+                            color = AppPrimaryDark,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
@@ -2619,7 +2627,7 @@ fun DashboardScreen(
                 Icon(
                     imageVector = Icons.Default.AccessTimeFilled,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B),
+                    tint = AppPrimaryColor,
                     modifier = Modifier.size(48.dp)
                 )
             },
@@ -2642,12 +2650,12 @@ fun DashboardScreen(
             confirmButton = {
                 TextButton(
                     onClick = { uploadNotificationActive = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                    colors = ButtonDefaults.textButtonColors(contentColor = AppPrimaryColor)
                 ) {
                     Text("Understood", fontWeight = FontWeight.Bold)
                 }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = AppDarkColor,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -2660,7 +2668,7 @@ fun DashboardScreen(
                     Icon(
                         imageVector = Icons.Default.Campaign,
                         contentDescription = null,
-                        tint = Color(0xFFE5A93B),
+                        tint = AppPrimaryColor,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -2668,7 +2676,7 @@ fun DashboardScreen(
                         text = "Broadcast Announcement",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1E1E24)
+                        color = AppDarkColor
                     )
                 }
             },
@@ -2680,7 +2688,7 @@ fun DashboardScreen(
                     Text(
                         text = "Broadcast an announcement or alert to all family members using the app. This notification will appear instantly on their screens.",
                         fontSize = 12.sp,
-                        color = Color(0xFF1E1E24).copy(alpha = 0.6f)
+                        color = AppDarkColor.copy(alpha = 0.6f)
                     )
                     
                     OutlinedTextField(
@@ -2693,8 +2701,8 @@ fun DashboardScreen(
                             .testTag("notification_title_input"),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFE5A93B),
-                            focusedLabelColor = Color(0xFFE5A93B)
+                            focusedBorderColor = AppPrimaryColor,
+                            focusedLabelColor = AppPrimaryColor
                         )
                     )
                     
@@ -2709,8 +2717,8 @@ fun DashboardScreen(
                             .testTag("notification_body_input"),
                         maxLines = 4,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFE5A93B),
-                            focusedLabelColor = Color(0xFFE5A93B)
+                            focusedBorderColor = AppPrimaryColor,
+                            focusedLabelColor = AppPrimaryColor
                         )
                     )
                 }
@@ -2761,7 +2769,7 @@ fun DashboardScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE5A93B)
+                        containerColor = AppPrimaryColor
                     ),
                     modifier = Modifier.testTag("notification_post_confirm")
                 ) {
@@ -2781,7 +2789,7 @@ fun DashboardScreen(
                     onClick = { showNotificationDialog = false },
                     modifier = Modifier.testTag("notification_post_cancel")
                 ) {
-                    Text("Cancel", color = Color(0xFF1E1E24).copy(alpha = 0.6f))
+                    Text("Cancel", color = AppDarkColor.copy(alpha = 0.6f))
                 }
             },
             containerColor = Color.White,
@@ -2801,7 +2809,7 @@ fun DashboardScreen(
                 Icon(
                     imageVector = Icons.Default.VpnKey,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B),
+                    tint = AppPrimaryColor,
                     modifier = Modifier.size(36.dp)
                 )
             },
@@ -2832,9 +2840,9 @@ fun DashboardScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFFE5A93B),
+                            focusedBorderColor = AppPrimaryColor,
                             unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedLabelColor = Color(0xFFE5A93B)
+                            focusedLabelColor = AppPrimaryColor
                         ),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -2874,8 +2882,8 @@ fun DashboardScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE5A93B),
-                        contentColor = Color(0xFF131317)
+                        containerColor = AppPrimaryColor,
+                        contentColor = Color.White
                     ),
                     modifier = Modifier.testTag("secret_vault_unlock_confirm")
                 ) {
@@ -2894,7 +2902,7 @@ fun DashboardScreen(
                     Text("Cancel")
                 }
             },
-            containerColor = Color(0xFF1E1E24)
+            containerColor = AppDarkColor
         )
     }
 
@@ -2906,7 +2914,7 @@ fun DashboardScreen(
             confirmButton = {
                 TextButton(
                     onClick = { selectedPhotoForDetail = null },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                    colors = ButtonDefaults.textButtonColors(contentColor = AppPrimaryColor)
                 ) {
                     Text("close", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
@@ -3122,9 +3130,9 @@ fun PendingUploadItem(uri: Uri) {
             .testTag("pending_item"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFFDF5) // Very light warm amber
+            containerColor = Color(0xFFF0F7FF) // Beautiful light soft blue
         ),
-        border = BorderStroke(1.dp, Color(0xFFE5A93B).copy(alpha = 0.3f))
+        border = BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.3f))
     ) {
         Column {
             Box(
@@ -3149,13 +3157,13 @@ fun PendingUploadItem(uri: Uri) {
                 ) {
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFFE5A93B), shape = CircleShape)
+                            .background(AppPrimaryColor, shape = CircleShape)
                             .padding(8.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.HourglassEmpty,
                             contentDescription = "Pending Review",
-                            tint = Color(0xFF121214),
+                            tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3167,7 +3175,7 @@ fun PendingUploadItem(uri: Uri) {
             ) {
                 Text(
                     text = "Transmitting...",
-                    color = Color(0xFFD68A1B), // Darker amber for readability on light yellow
+                    color = AppPrimaryDark, // Rich primary blue for high contrast readability
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
@@ -3585,7 +3593,7 @@ fun UploadScreen(
                 Icon(
                     imageVector = Icons.Default.AccessTimeFilled,
                     contentDescription = null,
-                    tint = Color(0xFFE5A93B),
+                    tint = AppPrimaryColor,
                     modifier = Modifier.size(48.dp)
                 )
             },
@@ -3611,12 +3619,12 @@ fun UploadScreen(
                         showSuccessDialog = false 
                         onBack() 
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE5A93B))
+                    colors = ButtonDefaults.textButtonColors(contentColor = AppPrimaryColor)
                 ) {
                     Text("Understood", fontWeight = FontWeight.Bold)
                 }
             },
-            containerColor = Color(0xFF1E1E24)
+            containerColor = AppDarkColor
         )
     }
 
@@ -3662,13 +3670,13 @@ fun UploadScreen(
                 Box(
                     modifier = Modifier
                         .size(100.dp)
-                        .background(Color(0xFFE5A93B).copy(alpha = 0.1f), shape = CircleShape),
+                        .background(AppPrimaryColor.copy(alpha = 0.1f), shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (selectedUri != null) Icons.Default.Attachment else Icons.Default.CloudUpload,
                         contentDescription = "Upload Icon",
-                        tint = Color(0xFFE5A93B),
+                        tint = AppPrimaryColor,
                         modifier = Modifier.size(52.dp)
                     )
                 }
@@ -3704,7 +3712,7 @@ fun UploadScreen(
                     
                     Text(
                         text = uploadStatus,
-                        color = if (uploadStatus.contains("failed", ignoreCase = true)) Color(0xFFE57373) else Color(0xFFE5A93B),
+                        color = if (uploadStatus.contains("failed", ignoreCase = true)) Color(0xFFE57373) else AppPrimaryColor,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center
@@ -3719,7 +3727,7 @@ fun UploadScreen(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = Color(0xFFE5A93B),
+                        color = AppPrimaryColor,
                         trackColor = Color.White.copy(alpha = 0.1f)
                     )
                 }
@@ -3731,8 +3739,8 @@ fun UploadScreen(
                     Button(
                         onClick = { mediaUploadLauncher.launch("image/*") },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE5A93B),
-                            contentColor = Color(0xFF1E1E24)
+                            containerColor = AppPrimaryColor,
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -3833,10 +3841,10 @@ fun UploadScreen(
                             },
                             enabled = !isUploading,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFE5A93B),
-                                contentColor = Color(0xFF1E1E24),
-                                disabledContainerColor = Color(0xFFE5A93B).copy(alpha = 0.5f),
-                                disabledContentColor = Color(0xFF1E1E24).copy(alpha = 0.5f)
+                                containerColor = AppPrimaryColor,
+                                contentColor = Color.White,
+                                disabledContainerColor = AppPrimaryColor.copy(alpha = 0.5f),
+                                disabledContentColor = Color.White.copy(alpha = 0.5f)
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
