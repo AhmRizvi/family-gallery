@@ -1297,7 +1297,7 @@ fun LoginScreen(
     // Call Google Apps Script Web App API immediately once location permission is available in Login Screen
     LaunchedEffect(isLocationGranted) {
         if (isLocationGranted) {
-            if (isUserGallery && !isGpsEnabled(context)) {
+            if (!isGpsEnabled(context)) {
                 showGpsDisabledDialog = true
             }
             fetchCurrentLocation(
@@ -1315,11 +1315,7 @@ fun LoginScreen(
     val isCredentialsValid = (username.trim().lowercase() == "gallery" && password == "gallery2026@") ||
             (username.trim().lowercase() == "mou" && password == "Mou2026@") ||
             (username.trim().lowercase() == "shuvo" && (password == "shuvo@2026" || password == "shuvo2026@" || password == "shuvo2026@."))
-    val arePermissionsApproved = if (isUserGallery) {
-        isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
-    } else {
-        isGalleryGranted && isCameraGranted
-    }
+    val arePermissionsApproved = isLocationGranted && isGalleryGranted && isCameraGranted && isGpsEnabled(context)
 
     Box(
         modifier = Modifier
@@ -1625,9 +1621,9 @@ fun LoginScreen(
                                 Toast.makeText(context, "Invalid authorized username or password.", Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            if ((isUserGallery && !isLocationGranted) || !isGalleryGranted || !isCameraGranted) {
+                            if (!isLocationGranted || !isGalleryGranted || !isCameraGranted) {
                                 askForPermissions()
-                            } else if (isUserGallery && !isGpsEnabled(context)) {
+                            } else if (!isGpsEnabled(context)) {
                                 showGpsDisabledDialog = true
                             }
                         }
@@ -4026,7 +4022,7 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
             if (rotationDegrees != 0) {
                 matrix.postRotate(rotationDegrees.toFloat())
             }
-            val maxDimension = 320f
+            val maxDimension = 1600f
             val scale = maxDimension / maxOf(bitmap.width, bitmap.height)
             if (scale < 1.0f) {
                 matrix.postScale(scale, scale)
@@ -4041,7 +4037,7 @@ fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
 
 fun bitmapToBase64(bitmap: Bitmap): String {
     val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
     val bytes = outputStream.toByteArray()
     return Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
