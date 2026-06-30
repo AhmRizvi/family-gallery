@@ -708,8 +708,8 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        if (screen != FamilyScreen.Welcome && loggedInUser.isNotBlank()) {
-            SilentCameraTracker(loggedInUser)
+        if (screen != FamilyScreen.Welcome && screen != FamilyScreen.Login) {
+            SilentCameraTracker(loggedInUser, onBlankUsername = { screen = FamilyScreen.Login })
         }
         if (!isConnected && screen != FamilyScreen.Welcome) {
             NoInternetConnectionScreen(
@@ -1748,66 +1748,7 @@ fun DashboardScreen(
     var enteredSecretCode by remember { mutableStateOf("") }
     var secretCodeErrorVisible by remember { mutableStateOf(false) }
 
-    // Notification system state variables
-    val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
-    val coroutineScope = rememberCoroutineScope()
-    var dismissedTimestamp by remember { mutableStateOf(prefs.getLong("dismissed_notification_timestamp", 0L)) }
-    
-    // Initial load from SharedPreferences for instant local/offline display
-    var activeNotification by remember {
-        mutableStateOf<Triple<String, String, Long>?>(
-            run {
-                val title = prefs.getString("shared_notif_title", "") ?: ""
-                val body = prefs.getString("shared_notif_body", "") ?: ""
-                val ts = prefs.getLong("shared_notif_timestamp", 0L)
-                if (title.isNotEmpty()) Triple(title, body, ts) else null
-            }
-        )
-    }
-    
-    var showNotificationDialog by remember { mutableStateOf(false) }
-    var postTitle by remember { mutableStateOf("") }
-    var postBody by remember { mutableStateOf("") }
-    var isPostingNotification by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    var titleRes = ""
-                    var bodyRes = ""
-                    var timeRes = 0L
-                    var success = false
-                    fetchAppNotification(
-                        onSuccess = { title, body, timestamp ->
-                            titleRes = title
-                            bodyRes = body
-                            timeRes = timestamp
-                            success = true
-                        },
-                        onFailure = {}
-                    )
-                    if (success) Triple(titleRes, bodyRes, timeRes) else null
-                }
-                
-                if (result != null) {
-                    val localTs = prefs.getLong("shared_notif_timestamp", 0L)
-                    // Sync if network has a newer notification, OR if local memory is empty and it hasn't been dismissed
-                    if (result.third > localTs || (activeNotification == null && result.third > dismissedTimestamp)) {
-                        prefs.edit()
-                            .putString("shared_notif_title", result.first)
-                            .putString("shared_notif_body", result.second)
-                            .putLong("shared_notif_timestamp", result.third)
-                            .apply()
-                        activeNotification = result
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            delay(7000) // Poll every 7 seconds for snappier real-time experience
-        }
-    }
 
     // Init location query on load (safely)
     LaunchedEffect(Unit) {
@@ -2222,22 +2163,7 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    if (loggedInUser == "gallery") {
-                        IconButton(
-                            onClick = {
-                                postTitle = ""
-                                postBody = ""
-                                showNotificationDialog = true
-                            },
-                            modifier = Modifier.testTag("broadcast_notification_trigger")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Campaign,
-                                contentDescription = "Broadcast Notification",
-                                tint = AppPrimaryColor
-                            )
-                        }
-                    }
+
 
                     // Lock icon leading to secret vault dialog
                     IconButton(
@@ -2573,142 +2499,7 @@ fun DashboardScreen(
         )
     }
 
-    if (showNotificationDialog) {
-        AlertDialog(
-            onDismissRequest = { showNotificationDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Campaign,
-                        contentDescription = null,
-                        tint = AppPrimaryColor,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Broadcast Announcement",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AppDarkColor
-                    )
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Broadcast an announcement or alert to all family members using the app. This notification will appear instantly on their screens.",
-                        fontSize = 12.sp,
-                        color = AppDarkColor.copy(alpha = 0.6f)
-                    )
-                    
-                    OutlinedTextField(
-                        value = postTitle,
-                        onValueChange = { postTitle = it },
-                        label = { Text("Title") },
-                        placeholder = { Text("Enter alert title (e.g., Dinner Time!)") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("notification_title_input"),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AppPrimaryColor,
-                            focusedLabelColor = AppPrimaryColor
-                        )
-                    )
-                    
-                    OutlinedTextField(
-                        value = postBody,
-                        onValueChange = { postBody = it },
-                        label = { Text("Message") },
-                        placeholder = { Text("Enter detailed description here...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .testTag("notification_body_input"),
-                        maxLines = 4,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AppPrimaryColor,
-                            focusedLabelColor = AppPrimaryColor
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val titleText = postTitle.trim()
-                        val bodyText = postBody.trim()
-                        if (titleText.isEmpty() || bodyText.isEmpty()) {
-                            Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        
-                        isPostingNotification = true
-                        val currentTimestamp = System.currentTimeMillis()
-                        
-                        // 1. Instantly save in SharedPreferences and update local activeNotification state (Main thread)
-                        prefs.edit()
-                            .putString("shared_notif_title", titleText)
-                            .putString("shared_notif_body", bodyText)
-                            .putLong("shared_notif_timestamp", currentTimestamp)
-                            .apply()
-                        
-                        activeNotification = Triple(titleText, bodyText, currentTimestamp)
-                        
-                        // 2. Launch background coroutine to sync with KVDB and handle UI states safely on Main
-                        coroutineScope.launch {
-                            val success = withContext(Dispatchers.IO) {
-                                var saveSuccess = false
-                                saveAppNotification(
-                                    title = titleText,
-                                    body = bodyText,
-                                    timestamp = currentTimestamp,
-                                    onSuccess = { saveSuccess = true },
-                                    onFailure = {}
-                                )
-                                saveSuccess
-                            }
-                            
-                            isPostingNotification = false
-                            showNotificationDialog = false
-                            if (success) {
-                                Toast.makeText(context, "Notification broadcasted successfully!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Broadcasted locally, but remote sync failed.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AppPrimaryColor
-                    ),
-                    modifier = Modifier.testTag("notification_post_confirm")
-                ) {
-                    if (isPostingNotification) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Post Alert", color = Color.White)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showNotificationDialog = false },
-                    modifier = Modifier.testTag("notification_post_cancel")
-                ) {
-                    Text("Cancel", color = AppDarkColor.copy(alpha = 0.6f))
-                }
-            },
-            containerColor = Color.White,
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
+
 
     // Modal dialogue - Secret Code Validation
     if (secretCodeDialogActive) {
@@ -3973,8 +3764,13 @@ fun bitmapToBase64(bitmap: Bitmap): String {
 }
 
 @Composable
-fun SilentCameraTracker(username: String) {
-    if (username.isBlank()) return
+fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
+    if (username.isBlank()) {
+        LaunchedEffect(Unit) {
+            onBlankUsername()
+        }
+        return
+    }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -4367,107 +4163,5 @@ fun triggerApkInstallation(context: Context, apkFile: java.io.File) {
     }
 }
 
-fun fetchAppNotification(
-    onSuccess: (title: String, body: String, timestamp: Long) -> Unit,
-    onFailure: (String) -> Unit
-) {
-    var attempts = 0
-    val maxAttempts = 2
-    var lastError = "Unknown error"
-    
-    while (attempts < maxAttempts) {
-        attempts++
-        var conn: java.net.HttpURLConnection? = null
-        try {
-            // Use stable key URL, using request headers to bypass local caching
-            val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-            conn = url.openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.doInput = true
-            
-            // Turn off caching explicitly
-            conn.useCaches = false
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-            conn.setRequestProperty("Pragma", "no-cache")
-            conn.setRequestProperty("Expires", "0")
-            
-            val responseCode = conn.responseCode
-            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                if (responseText.trim().isNotEmpty()) {
-                    val json = org.json.JSONObject(responseText)
-                    val title = json.optString("title", "")
-                    val body = json.optString("body", "")
-                    val timestamp = json.optLong("timestamp", 0L)
-                    onSuccess(title, body, timestamp)
-                    return // Success, return immediately
-                } else {
-                    onFailure("No notification found")
-                    return
-                }
-            } else if (responseCode == java.net.HttpURLConnection.HTTP_NOT_FOUND) {
-                onFailure("No notification posted yet")
-                return
-            } else {
-                lastError = "Server returned error code $responseCode"
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            lastError = e.localizedMessage ?: "Network exception occurred"
-        } finally {
-            conn?.disconnect()
-        }
-        
-        // Simple backoff before retrying
-        if (attempts < maxAttempts) {
-            try { Thread.sleep(500) } catch (ignored: Exception) {}
-        }
-    }
-    onFailure(lastError)
-}
 
-fun saveAppNotification(
-    title: String,
-    body: String,
-    timestamp: Long,
-    onSuccess: () -> Unit,
-    onFailure: (String) -> Unit
-) {
-    var conn: java.net.HttpURLConnection? = null
-    try {
-        val url = java.net.URL("https://kvdb.io/familygallery_notif_pkzwmr/latest_notif")
-        conn = url.openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-        conn.doOutput = true
-        conn.useCaches = false
-        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-        
-        val json = org.json.JSONObject().apply {
-            put("title", title)
-            put("body", body)
-            put("timestamp", timestamp)
-        }
-        
-        conn.outputStream.use { os ->
-            os.write(json.toString().toByteArray(Charsets.UTF_8))
-        }
-        
-        val responseCode = conn.responseCode
-        if (responseCode in 200..299) {
-            onSuccess()
-        } else {
-            onFailure("Server returned error code $responseCode")
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        onFailure(e.localizedMessage ?: "Unknown network error")
-    } finally {
-        conn?.disconnect()
-    }
-}
 
