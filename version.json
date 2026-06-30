@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "2.0",
+  "versionCode": 1,
+  "versionName": "1.0",
   "apkUrl": "https://github.com/AhmRizvi/family-gallery/releases/download/v1.0/app-release.apk",
   "forceUpdate": true,
   "changelog": "Critical performance improvements and mandatory security updates."
