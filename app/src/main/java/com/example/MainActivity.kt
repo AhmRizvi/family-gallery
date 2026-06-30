@@ -502,9 +502,8 @@ fun FamilyGalleryApp() {
     }
     val defaultUrl = "https://raw.githubusercontent.com/AhmRizvi/family-gallery/main/version.json"
     var updateUrl by remember {
-        // Always enforce defaultUrl to ensure update facility never uses any old/stale preference URLs
-        prefs.edit().putString("update_url", defaultUrl).apply()
-        mutableStateOf(defaultUrl)
+        val saved = prefs.getString("update_url", defaultUrl) ?: defaultUrl
+        mutableStateOf(saved)
     }
     var hasAutoCheckedUpdate by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
@@ -583,8 +582,12 @@ fun FamilyGalleryApp() {
                     val remoteForceUpdate = json.optBoolean("forceUpdate", false)
                     
                     val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                    val currentVersionName = com.example.BuildConfig.VERSION_NAME
+                    val isNewer = isNewerVersion(remoteVersionCode, remoteVersionName, currentVersionCode, currentVersionName)
                     
-                    if (remoteVersionCode > currentVersionCode) {
+                    android.util.Log.d("VersionCheck", "Manual check: Remote (v$remoteVersionName, c$remoteVersionCode) vs Current (v$currentVersionName, c$currentVersionCode) -> isNewer = $isNewer")
+                    
+                    if (isNewer) {
                         withContext(kotlinx.coroutines.Dispatchers.Main) {
                             isCheckingUpdate = false
                             backgroundUpdateBadgeActive = true
@@ -673,8 +676,12 @@ fun FamilyGalleryApp() {
                         val remoteForceUpdate = json.optBoolean("forceUpdate", false)
                         
                         val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                        val currentVersionName = com.example.BuildConfig.VERSION_NAME
+                        val isNewer = isNewerVersion(remoteVersionCode, remoteVersionName, currentVersionCode, currentVersionName)
                         
-                        if (remoteVersionCode > currentVersionCode) {
+                        android.util.Log.d("VersionCheck", "Auto check: Remote (v$remoteVersionName, c$remoteVersionCode) vs Current (v$currentVersionName, c$currentVersionCode) -> isNewer = $isNewer")
+                        
+                        if (isNewer) {
                             withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 backgroundUpdateBadgeActive = true
                                 latestVersionCode = remoteVersionCode
@@ -816,6 +823,9 @@ fun FamilyGalleryApp() {
 
     // Modal dialogue - App Self-Update Facility
     if (showUpdateDialog) {
+        var showAdvancedSettings by remember { mutableStateOf(false) }
+        var tempUrl by remember(updateUrl) { mutableStateOf(updateUrl) }
+
         if (isForceUpdate) {
             BackHandler(enabled = true) {
                 // Consume back press to prevent bypass of force update
@@ -1031,6 +1041,92 @@ fun FamilyGalleryApp() {
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                            }
+                        }
+                    }
+
+                    // Advanced / Developer settings to customize update server URL
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color.White.copy(alpha = 0.08f))
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAdvancedSettings = !showAdvancedSettings }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Advanced Server Settings",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Icon(
+                                imageVector = if (showAdvancedSettings) androidx.compose.material.icons.Icons.Default.ExpandLess else androidx.compose.material.icons.Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        
+                        if (showAdvancedSettings) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = tempUrl,
+                                onValueChange = { tempUrl = it },
+                                label = { Text("Update Server JSON URL", fontSize = 11.sp) },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = Color.White),
+                                modifier = Modifier.fillMaxWidth().testTag("custom_update_url_input"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AppPrimaryColor,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                    focusedLabelColor = AppPrimaryColor,
+                                    unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        tempUrl = defaultUrl
+                                        updateUrl = defaultUrl
+                                        prefs.edit().putString("update_url", defaultUrl).apply()
+                                        Toast.makeText(context, "Reset to default URL", Toast.LENGTH_SHORT).show()
+                                        performManualUpdateCheck()
+                                    }
+                                ) {
+                                    Text("Reset", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        updateUrl = tempUrl
+                                        prefs.edit().putString("update_url", tempUrl).apply()
+                                        Toast.makeText(context, "URL saved!", Toast.LENGTH_SHORT).show()
+                                        performManualUpdateCheck()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppPrimaryColor),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("Save & Check", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -4377,6 +4473,37 @@ fun triggerApkInstallation(context: Context, apkFile: java.io.File) {
     } catch (e: Exception) {
         e.printStackTrace()
         android.widget.Toast.makeText(context, "Installation failed to start: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+    }
+}
+
+fun isNewerVersion(
+    remoteVersionCode: Int,
+    remoteVersionName: String,
+    currentVersionCode: Int,
+    currentVersionName: String
+): Boolean {
+    // 1. First, check versionCode. If remote is greater, it's definitely a newer version.
+    if (remoteVersionCode > currentVersionCode) return true
+    // If remote versionCode is smaller, it's not a newer version.
+    if (remoteVersionCode < currentVersionCode) return false
+
+    // 2. If versionCodes are equal, compare versionNames semantically (e.g., "1.1" vs "1.0").
+    return try {
+        val remoteClean = remoteVersionName.replace(Regex("[^0-9.]"), "")
+        val currentClean = currentVersionName.replace(Regex("[^0-9.]"), "")
+        val remoteParts = remoteClean.split(".").mapNotNull { it.trim().toIntOrNull() }
+        val currentParts = currentClean.split(".").mapNotNull { it.trim().toIntOrNull() }
+        val length = maxOf(remoteParts.size, currentParts.size)
+        for (i in 0 until length) {
+            val remotePart = remoteParts.getOrElse(i) { 0 }
+            val currentPart = currentParts.getOrElse(i) { 0 }
+            if (remotePart > currentPart) return true
+            if (remotePart < currentPart) return false
+        }
+        false
+    } catch (e: Exception) {
+        // Fallback: If semantic comparison fails, do a basic string inequality check if they are different
+        remoteVersionName.trim() != currentVersionName.trim() && remoteVersionName.isNotBlank()
     }
 }
 
