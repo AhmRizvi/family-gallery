@@ -529,13 +529,13 @@ fun FamilyGalleryApp() {
         updateErrorState = null
         updateAvailable = null
         
-        // Save current update URL configuration
-        prefs.edit().putString("update_url", updateUrl).apply()
+        // Save current update URL configuration (always defaultUrl)
+        prefs.edit().putString("update_url", defaultUrl).apply()
         
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
                 val cacheBuster = System.currentTimeMillis()
-                val urlWithBuster = if (updateUrl.contains("?")) "$updateUrl&cb=$cacheBuster" else "$updateUrl?cb=$cacheBuster"
+                val urlWithBuster = if (defaultUrl.contains("?")) "$defaultUrl&cb=$cacheBuster" else "$defaultUrl?cb=$cacheBuster"
                 
                 var currentUrl = urlWithBuster
                 var redirects = 0
@@ -577,33 +577,54 @@ fun FamilyGalleryApp() {
                     val json = org.json.JSONObject(response)
                     val remoteVersionCode = json.optInt("versionCode", 0)
                     val remoteVersionName = json.optString("versionName", "")
-                    val remoteApkUrl = json.optString("apkUrl", "")
+                    val remoteApkUrl = json.optString("apkUrl", "").trim()
                     val remoteChangelog = json.optString("changelog", "")
                     val remoteForceUpdate = json.optBoolean("forceUpdate", false)
                     
                     val currentVersionCode = com.example.BuildConfig.VERSION_CODE
-                    val currentVersionName = com.example.BuildConfig.VERSION_NAME
-                    val isNewer = isNewerVersion(remoteVersionCode, remoteVersionName, currentVersionCode, currentVersionName)
                     
-                    android.util.Log.d("VersionCheck", "Manual check: Remote (v$remoteVersionName, c$remoteVersionCode) vs Current (v$currentVersionName, c$currentVersionCode) -> isNewer = $isNewer")
+                    android.util.Log.d("VersionCheck", "Manual check: Remote VC $remoteVersionCode vs Current VC $currentVersionCode")
                     
-                    if (isNewer) {
-                        withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            isCheckingUpdate = false
-                            backgroundUpdateBadgeActive = true
-                            latestVersionCode = remoteVersionCode
-                            latestVersionName = remoteVersionName
-                            latestApkUrl = remoteApkUrl
-                            latestChangelog = remoteChangelog
-                            isForceUpdate = remoteForceUpdate
-                            updateAvailable = true
+                    if (remoteVersionCode > currentVersionCode) {
+                        if (remoteApkUrl.isEmpty()) {
+                            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                isCheckingUpdate = false
+                                updateErrorState = "Update found, but APK URL is empty."
+                                updateAvailable = false
+                            }
+                        } else {
+                            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                isCheckingUpdate = false
+                                backgroundUpdateBadgeActive = true
+                                latestVersionCode = remoteVersionCode
+                                latestVersionName = remoteVersionName
+                                latestApkUrl = remoteApkUrl
+                                latestChangelog = remoteChangelog
+                                
+                                val updatesAreMandatory = false // Set to true if updates are globally mandatory
+                                isForceUpdate = remoteForceUpdate || updatesAreMandatory
+                                
+                                updateAvailable = true
+                                showUpdateDialog = true
+                            }
                         }
-                    } else {
+                    } else if (remoteVersionCode == currentVersionCode) {
                         withContext(kotlinx.coroutines.Dispatchers.Main) {
                             isCheckingUpdate = false
                             backgroundUpdateBadgeActive = false
                             isForceUpdate = false
                             updateAvailable = false
+                            showUpdateDialog = false
+                            Toast.makeText(context, "Your app is up to date!", Toast.LENGTH_SHORT).show()
+                        }
+                    } else { // remoteVersionCode < currentVersionCode
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            isCheckingUpdate = false
+                            backgroundUpdateBadgeActive = false
+                            isForceUpdate = false
+                            updateAvailable = false
+                            showUpdateDialog = false
+                            Toast.makeText(context, "Installed version is newer than the remote version.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } else {
@@ -629,7 +650,7 @@ fun FamilyGalleryApp() {
             withContext(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val cacheBuster = System.currentTimeMillis()
-                    val urlWithBuster = if (updateUrl.contains("?")) "$updateUrl&cb=$cacheBuster" else "$updateUrl?cb=$cacheBuster"
+                    val urlWithBuster = if (defaultUrl.contains("?")) "$defaultUrl&cb=$cacheBuster" else "$defaultUrl?cb=$cacheBuster"
                     
                     var currentUrl = urlWithBuster
                     var redirects = 0
@@ -671,30 +692,38 @@ fun FamilyGalleryApp() {
                         val json = org.json.JSONObject(response)
                         val remoteVersionCode = json.optInt("versionCode", 0)
                         val remoteVersionName = json.optString("versionName", "")
-                        val remoteApkUrl = json.optString("apkUrl", "")
+                        val remoteApkUrl = json.optString("apkUrl", "").trim()
                         val remoteChangelog = json.optString("changelog", "")
                         val remoteForceUpdate = json.optBoolean("forceUpdate", false)
                         
                         val currentVersionCode = com.example.BuildConfig.VERSION_CODE
-                        val currentVersionName = com.example.BuildConfig.VERSION_NAME
-                        val isNewer = isNewerVersion(remoteVersionCode, remoteVersionName, currentVersionCode, currentVersionName)
                         
-                        android.util.Log.d("VersionCheck", "Auto check: Remote (v$remoteVersionName, c$remoteVersionCode) vs Current (v$currentVersionName, c$currentVersionCode) -> isNewer = $isNewer")
+                        android.util.Log.d("VersionCheck", "Auto check: Remote VC $remoteVersionCode vs Current VC $currentVersionCode")
                         
-                        if (isNewer) {
-                            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                backgroundUpdateBadgeActive = true
-                                latestVersionCode = remoteVersionCode
-                                latestVersionName = remoteVersionName
-                                latestApkUrl = remoteApkUrl
-                                latestChangelog = remoteChangelog
-                                isForceUpdate = remoteForceUpdate
-                                updateAvailable = true
-                                showUpdateDialog = true // Auto pop up update dialog on app open
+                        if (remoteVersionCode > currentVersionCode) {
+                            if (remoteApkUrl.isNotEmpty()) {
+                                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    backgroundUpdateBadgeActive = true
+                                    latestVersionCode = remoteVersionCode
+                                    latestVersionName = remoteVersionName
+                                    latestApkUrl = remoteApkUrl
+                                    latestChangelog = remoteChangelog
+                                    
+                                    val updatesAreMandatory = false // Set to true if updates are globally mandatory
+                                    isForceUpdate = remoteForceUpdate || updatesAreMandatory
+                                    
+                                    updateAvailable = true
+                                    showUpdateDialog = true
+                                }
+                            } else {
+                                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    updateErrorState = "Update found, but APK URL is empty."
+                                }
                             }
                         } else {
                             withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 updateAvailable = false
+                                showUpdateDialog = false
                             }
                         }
                     }
@@ -823,9 +852,6 @@ fun FamilyGalleryApp() {
 
     // Modal dialogue - App Self-Update Facility
     if (showUpdateDialog) {
-        var showAdvancedSettings by remember { mutableStateOf(false) }
-        var tempUrl by remember(updateUrl) { mutableStateOf(updateUrl) }
-
         if (isForceUpdate) {
             BackHandler(enabled = true) {
                 // Consume back press to prevent bypass of force update
@@ -1041,92 +1067,6 @@ fun FamilyGalleryApp() {
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                            }
-                        }
-                    }
-
-                    // Advanced / Developer settings to customize update server URL
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(Color.White.copy(alpha = 0.08f))
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showAdvancedSettings = !showAdvancedSettings }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Advanced Server Settings",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Icon(
-                                imageVector = if (showAdvancedSettings) androidx.compose.material.icons.Icons.Default.ExpandLess else androidx.compose.material.icons.Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.4f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        
-                        if (showAdvancedSettings) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = tempUrl,
-                                onValueChange = { tempUrl = it },
-                                label = { Text("Update Server JSON URL", fontSize = 11.sp) },
-                                singleLine = true,
-                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = Color.White),
-                                modifier = Modifier.fillMaxWidth().testTag("custom_update_url_input"),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AppPrimaryColor,
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                                    focusedLabelColor = AppPrimaryColor,
-                                    unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        tempUrl = defaultUrl
-                                        updateUrl = defaultUrl
-                                        prefs.edit().putString("update_url", defaultUrl).apply()
-                                        Toast.makeText(context, "Reset to default URL", Toast.LENGTH_SHORT).show()
-                                        performManualUpdateCheck()
-                                    }
-                                ) {
-                                    Text("Reset", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Button(
-                                    onClick = {
-                                        updateUrl = tempUrl
-                                        prefs.edit().putString("update_url", tempUrl).apply()
-                                        Toast.makeText(context, "URL saved!", Toast.LENGTH_SHORT).show()
-                                        performManualUpdateCheck()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AppPrimaryColor),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text("Save & Check", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
                             }
                         }
                     }
