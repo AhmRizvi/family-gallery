@@ -502,14 +502,9 @@ fun FamilyGalleryApp() {
     }
     val defaultUrl = "https://raw.githubusercontent.com/AhmRizvi/family-gallery/main/version.json"
     var updateUrl by remember {
-        val saved = prefs.getString("update_url", defaultUrl) ?: defaultUrl
-        val finalUrl = if (saved.contains("rizviahm6") || saved.contains("update.json")) {
-            prefs.edit().putString("update_url", defaultUrl).apply()
-            defaultUrl
-        } else {
-            saved
-        }
-        mutableStateOf(finalUrl)
+        // Always enforce defaultUrl to ensure update facility never uses any old/stale preference URLs
+        prefs.edit().putString("update_url", defaultUrl).apply()
+        mutableStateOf(defaultUrl)
     }
     var hasAutoCheckedUpdate by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
@@ -778,7 +773,12 @@ fun FamilyGalleryApp() {
                             screen = FamilyScreen.Login
                         },
                         backgroundUpdateBadgeActive = backgroundUpdateBadgeActive,
-                        onShowUpdateDialog = { showUpdateDialog = true }
+                        onShowUpdateDialog = { showUpdateDialog = true },
+                        latestVersionName = latestVersionName,
+                        onCheckUpdate = {
+                            performManualUpdateCheck()
+                            showUpdateDialog = true
+                        }
                     )
                 }
                 is FamilyScreen.SecretFolder -> {
@@ -822,10 +822,15 @@ fun FamilyGalleryApp() {
             }
         }
         AlertDialog(
-            onDismissRequest = { if (!isForceUpdate) { showUpdateDialog = false } },
+            onDismissRequest = { if (!isForceUpdate && !isCheckingUpdate && !isDownloadingApk) { showUpdateDialog = false } },
             title = {
                 Text(
-                    text = "New Update Available",
+                    text = when {
+                        isCheckingUpdate -> "Checking for Updates"
+                        updateErrorState != null -> "Update Check Failed"
+                        updateAvailable == false -> "App is Up to Date"
+                        else -> "New Update Available"
+                    },
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -839,142 +844,228 @@ fun FamilyGalleryApp() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (isForceUpdate) {
-                        Text(
-                            text = "Update is required to continue.",
-                            color = Color(0xFFFF8A80),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    // A beautiful visual comparison grid
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(12.dp))
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Current version on the left
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "Installed",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Normal
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "V${com.example.BuildConfig.VERSION_NAME} (${com.example.BuildConfig.VERSION_CODE})",
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        // Elegant arrow in the middle
-                        Icon(
-                            imageVector = Icons.Default.ArrowForward,
-                            contentDescription = null,
-                            tint = AppPrimaryColor.copy(alpha = 0.6f),
-                            modifier = Modifier.size(20.dp)
-                        )
-
-                        // Update version on the right
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "Latest",
+                    when {
+                        isCheckingUpdate -> {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            CircularProgressIndicator(
                                 color = AppPrimaryColor,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                modifier = Modifier.size(44.dp)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "V$latestVersionName ($latestVersionCode)",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "Connecting to the update server to fetch release details...",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
-
-                    // Direct APK Download Progress / Errors
-                    if (isDownloadingApk) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                        updateErrorState != null -> {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = Color(0xFFFF8A80),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                text = "Unable to complete the update check right now:\n$updateErrorState",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        updateAvailable == false -> {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                text = "You are running the latest version of Family Gallery!\nInstalled: V${com.example.BuildConfig.VERSION_NAME} (${com.example.BuildConfig.VERSION_CODE})",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        else -> {
+                            if (isForceUpdate) {
                                 Text(
-                                    "Downloading...",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 12.sp
-                                )
-                                Text(
-                                    "${(downloadApkProgress * 100).toInt()}%",
-                                    color = AppPrimaryColor,
+                                    text = "Update is required to continue.",
+                                    color = Color(0xFFFF8A80),
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            LinearProgressIndicator(
-                                progress = { downloadApkProgress },
+
+                            // A beautiful visual comparison grid
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = AppPrimaryColor,
-                                trackColor = Color.White.copy(alpha = 0.05f)
-                            )
-                        }
-                    } else if (downloadApkError != null) {
-                        Text(
-                            text = downloadApkError ?: "",
-                            color = Color(0xFFFF8A80),
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        )
-                    }
+                                    .background(Color.White.copy(alpha = 0.03f), shape = RoundedCornerShape(12.dp))
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Current version on the left
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Installed",
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "V${com.example.BuildConfig.VERSION_NAME} (${com.example.BuildConfig.VERSION_CODE})",
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
 
-                    // Success downloaded file local trigger banner
-                    if (pendingApkFile != null && !isDownloadingApk) {
-                        Text(
-                            text = "Download complete, ready to install.",
-                            color = Color(0xFF81C784),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                                // Elegant arrow in the middle
+                                Icon(
+                                    imageVector = Icons.Default.ArrowForward,
+                                    contentDescription = null,
+                                    tint = AppPrimaryColor.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+
+                                // Update version on the right
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Latest",
+                                        color = AppPrimaryColor,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "V$latestVersionName ($latestVersionCode)",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Display changelog cleanly if present
+                            if (latestChangelog.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = "What's New:",
+                                        color = AppPrimaryColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = latestChangelog,
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
+
+                            // Direct APK Download Progress / Errors
+                            if (isDownloadingApk) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Downloading...",
+                                            color = Color.White.copy(alpha = 0.6f),
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "${(downloadApkProgress * 100).toInt()}%",
+                                            color = AppPrimaryColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { downloadApkProgress },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
+                                        color = AppPrimaryColor,
+                                        trackColor = Color.White.copy(alpha = 0.05f)
+                                    )
+                                }
+                            } else if (downloadApkError != null) {
+                                Text(
+                                    text = downloadApkError ?: "",
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                )
+                            }
+
+                            // Success downloaded file local trigger banner
+                            if (pendingApkFile != null && !isDownloadingApk) {
+                                Text(
+                                    text = "Download complete, ready to install.",
+                                    color = Color(0xFF81C784),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                     }
                 }
             },
             confirmButton = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isForceUpdate) Arrangement.Center else Arrangement.End,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!isForceUpdate && !isDownloadingApk && pendingApkFile == null) {
+                    if (!isForceUpdate && !isDownloadingApk) {
                         TextButton(
                             onClick = { showUpdateDialog = false },
                             colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.5f))
                         ) {
-                            Text("Later")
+                            Text(if (updateAvailable == false || updateErrorState != null) "Close" else "Later")
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                     }
 
-                    if (pendingApkFile != null && !isDownloadingApk) {
+                    if (updateErrorState != null) {
+                        Button(
+                            onClick = {
+                                performManualUpdateCheck()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppPrimaryColor,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Retry Check", fontWeight = FontWeight.Bold)
+                        }
+                    } else if (pendingApkFile != null && !isDownloadingApk) {
                         Button(
                             onClick = {
                                 val apkFile = pendingApkFile
@@ -1006,7 +1097,7 @@ fun FamilyGalleryApp() {
                                 isDownloadingApk = true
                                 downloadApkProgress = 0f
                                 downloadApkError = null
-                                downloadApkWithDownloadManager(
+                                downloadAndInstallApk(
                                     context = context,
                                     apkUrlString = latestApkUrl,
                                     onProgress = { progress ->
@@ -1044,6 +1135,18 @@ fun FamilyGalleryApp() {
                             modifier = Modifier.height(40.dp)
                         ) {
                             Text("Update", fontWeight = FontWeight.Bold)
+                        }
+                    } else if (updateAvailable == false && !isCheckingUpdate) {
+                        Button(
+                            onClick = { showUpdateDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppPrimaryColor,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Text("OK", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1729,7 +1832,9 @@ fun DashboardScreen(
     onOpenSecret: () -> Unit,
     onLogout: () -> Unit,
     backgroundUpdateBadgeActive: Boolean,
-    onShowUpdateDialog: () -> Unit
+    onShowUpdateDialog: () -> Unit,
+    latestVersionName: String,
+    onCheckUpdate: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -2161,7 +2266,41 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-
+                    if (backgroundUpdateBadgeActive) {
+                        Box {
+                            IconButton(
+                                onClick = onShowUpdateDialog,
+                                modifier = Modifier.testTag("update_dialog_trigger_topbar")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = "App Update Available",
+                                    tint = AppPrimaryColor
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 8.dp, end = 8.dp)
+                                    .background(Color.Red, shape = CircleShape)
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                Toast.makeText(context, "Checking for updates...", Toast.LENGTH_SHORT).show()
+                                onCheckUpdate()
+                            },
+                            modifier = Modifier.testTag("manual_update_check_topbar")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "Check for Updates",
+                                tint = AppDarkColor.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
 
                     // Lock icon leading to secret vault dialog
                     IconButton(
@@ -2392,6 +2531,74 @@ fun DashboardScreen(
                                     tint = Color(0xFF1E1E24).copy(alpha = 0.6f)
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            if (backgroundUpdateBadgeActive) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("dashboard_update_banner"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = AppPrimaryColor.copy(alpha = 0.12f)
+                    ),
+                    border = BorderStroke(1.dp, AppPrimaryColor.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(AppPrimaryColor.copy(alpha = 0.15f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = AppPrimaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Update Available",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = AppPrimaryDark
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Version V$latestVersionName is ready to install.",
+                                    fontSize = 11.sp,
+                                    color = Color.Black.copy(alpha = 0.65f)
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onShowUpdateDialog,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppPrimaryColor,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Update", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
