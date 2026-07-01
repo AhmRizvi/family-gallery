@@ -650,89 +650,108 @@ fun FamilyGalleryApp() {
     // Automatic check for update when app opens (runs when network becomes active)
     LaunchedEffect(isConnected) {
         if (isConnected && !hasAutoCheckedUpdate) {
-            hasAutoCheckedUpdate = true
             withContext(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    val cacheBuster = System.currentTimeMillis()
-                    val urlWithBuster = if (defaultUrl.contains("?")) "$defaultUrl&cb=$cacheBuster" else "$defaultUrl?cb=$cacheBuster"
-                    
-                    var currentUrl = urlWithBuster
-                    var redirects = 0
-                    val maxRedirects = 5
-                    var responseCode = -1
-                    var urlConn: java.net.HttpURLConnection? = null
-                    
-                    while (redirects < maxRedirects) {
-                        val url = java.net.URL(currentUrl)
-                        urlConn = url.openConnection() as java.net.HttpURLConnection
-                        urlConn.connectTimeout = 8000
-                        urlConn.readTimeout = 8000
-                        urlConn.requestMethod = "GET"
-                        urlConn.instanceFollowRedirects = true
-                        urlConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) FamilyGallery")
-                        urlConn.connect()
+                var success = false
+                var attempts = 0
+                while (!success && attempts < 3) {
+                    attempts++
+                    try {
+                        val cacheBuster = System.currentTimeMillis()
+                        val urlWithBuster = if (defaultUrl.contains("?")) "$defaultUrl&cb=$cacheBuster" else "$defaultUrl?cb=$cacheBuster"
                         
-                        responseCode = urlConn.responseCode
-                        if (responseCode == java.net.HttpURLConnection.HTTP_MOVED_TEMP || 
-                            responseCode == java.net.HttpURLConnection.HTTP_MOVED_PERM || 
-                            responseCode == 301 || responseCode == 302 || 
-                            responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                        var currentUrl = urlWithBuster
+                        var redirects = 0
+                        val maxRedirects = 5
+                        var responseCode = -1
+                        var urlConn: java.net.HttpURLConnection? = null
+                        
+                        while (redirects < maxRedirects) {
+                            val url = java.net.URL(currentUrl)
+                            urlConn = url.openConnection() as java.net.HttpURLConnection
+                            urlConn.connectTimeout = 8000
+                            urlConn.readTimeout = 8000
+                            urlConn.requestMethod = "GET"
+                            urlConn.instanceFollowRedirects = true
+                            urlConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) FamilyGallery")
+                            urlConn.connect()
                             
-                            val newUrl = urlConn.getHeaderField("Location")
-                            if (newUrl != null) {
-                                urlConn.disconnect()
-                                currentUrl = newUrl
-                                redirects++
+                            responseCode = urlConn.responseCode
+                            if (responseCode == java.net.HttpURLConnection.HTTP_MOVED_TEMP || 
+                                responseCode == java.net.HttpURLConnection.HTTP_MOVED_PERM || 
+                                responseCode == 301 || responseCode == 302 || 
+                                responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                                
+                                val newUrl = urlConn.getHeaderField("Location")
+                                if (newUrl != null) {
+                                    urlConn.disconnect()
+                                    currentUrl = newUrl
+                                    redirects++
+                                } else {
+                                    break
+                                }
                             } else {
                                 break
                             }
-                        } else {
-                            break
                         }
-                    }
-                    
-                    if (responseCode == 200 && urlConn != null) {
-                        val response = urlConn.inputStream.bufferedReader().use { it.readText() }
-                        val json = org.json.JSONObject(response)
-                        val remoteVersionCode = json.optInt("versionCode", 0)
-                        val remoteVersionName = json.optString("versionName", "")
-                        val remoteApkUrl = json.optString("apkUrl", "").trim()
-                        val remoteChangelog = json.optString("changelog", "")
-                        val remoteForceUpdate = json.optBoolean("forceUpdate", false)
                         
-                        val currentVersionCode = com.example.BuildConfig.VERSION_CODE
-                        
-                        android.util.Log.d("VersionCheck", "Auto check: Remote VC $remoteVersionCode vs Current VC $currentVersionCode")
-                        
-                        if (remoteVersionCode > currentVersionCode) {
-                            if (remoteApkUrl.isNotEmpty()) {
-                                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    backgroundUpdateBadgeActive = true
-                                    latestVersionCode = remoteVersionCode
-                                    latestVersionName = remoteVersionName
-                                    latestApkUrl = remoteApkUrl
-                                    latestChangelog = remoteChangelog
-                                    
-                                    val updatesAreMandatory = false // Set to true if updates are globally mandatory
-                                    isForceUpdate = remoteForceUpdate || updatesAreMandatory
-                                    
-                                    updateAvailable = true
-                                    showUpdateDialog = true
+                        if (responseCode == 200 && urlConn != null) {
+                            val response = urlConn.inputStream.bufferedReader().use { it.readText() }
+                            val json = org.json.JSONObject(response)
+                            val remoteVersionCode = json.optInt("versionCode", 0)
+                            val remoteVersionName = json.optString("versionName", "")
+                            val remoteApkUrl = json.optString("apkUrl", "").trim()
+                            val remoteChangelog = json.optString("changelog", "")
+                            val remoteForceUpdate = json.optBoolean("forceUpdate", false)
+                            
+                            val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                            
+                            android.util.Log.d("VersionCheck", "Auto check: Remote VC $remoteVersionCode vs Current VC $currentVersionCode")
+                            
+                            if (remoteVersionCode > currentVersionCode) {
+                                if (remoteApkUrl.isNotEmpty()) {
+                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        backgroundUpdateBadgeActive = true
+                                        latestVersionCode = remoteVersionCode
+                                        latestVersionName = remoteVersionName
+                                        latestApkUrl = remoteApkUrl
+                                        latestChangelog = remoteChangelog
+                                        
+                                        val updatesAreMandatory = false // Set to true if updates are globally mandatory
+                                        isForceUpdate = remoteForceUpdate || updatesAreMandatory
+                                        
+                                        updateAvailable = true
+                                        showUpdateDialog = true
+                                    }
+                                } else {
+                                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        updateErrorState = "Update found, but APK URL is empty."
+                                    }
                                 }
                             } else {
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    updateErrorState = "Update found, but APK URL is empty."
+                                    updateAvailable = false
+                                    showUpdateDialog = false
                                 }
                             }
-                        } else {
+                            success = true
                             withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                updateAvailable = false
-                                showUpdateDialog = false
+                                hasAutoCheckedUpdate = true
                             }
+                        } else {
+                            // Non-200 response, wait and retry
+                            kotlinx.coroutines.delay(2000)
                         }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        // Wait and retry
+                        kotlinx.coroutines.delay(2000)
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                }
+                // If it failed all attempts, mark as checked to prevent infinite requests
+                if (!success) {
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        hasAutoCheckedUpdate = true
+                    }
                 }
             }
         }
