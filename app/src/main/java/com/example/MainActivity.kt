@@ -507,6 +507,10 @@ fun FamilyGalleryApp() {
     }
     var hasAutoCheckedUpdate by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var isManualUpdateCheck by remember { mutableStateOf(false) }
+    if (!showUpdateDialog) {
+        isManualUpdateCheck = false
+    }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateErrorState by remember { mutableStateOf<String?>(null) }
     var updateAvailable by remember { mutableStateOf<Boolean?>(null) } // null = unchecked, true = update available, false = up to date
@@ -770,6 +774,7 @@ fun FamilyGalleryApp() {
                 is FamilyScreen.Welcome -> {
                     WelcomeScreen(
                         onExploreClick = {
+                            showUpdateDialog = false
                             if (hasAllRequiredAccess(context)) {
                                 screen = FamilyScreen.Dashboard
                             } else {
@@ -809,9 +814,13 @@ fun FamilyGalleryApp() {
                             screen = FamilyScreen.Login
                         },
                         backgroundUpdateBadgeActive = backgroundUpdateBadgeActive,
-                        onShowUpdateDialog = { showUpdateDialog = true },
+                        onShowUpdateDialog = {
+                            isManualUpdateCheck = true
+                            showUpdateDialog = true
+                        },
                         latestVersionName = latestVersionName,
                         onCheckUpdate = {
+                            isManualUpdateCheck = true
                             performManualUpdateCheck()
                             showUpdateDialog = true
                         }
@@ -851,7 +860,7 @@ fun FamilyGalleryApp() {
     }
 
     // Modal dialogue - App Self-Update Facility
-    if (showUpdateDialog) {
+    if (showUpdateDialog && (screen == FamilyScreen.Welcome || isManualUpdateCheck)) {
         if (isForceUpdate) {
             BackHandler(enabled = true) {
                 // Consume back press to prevent bypass of force update
