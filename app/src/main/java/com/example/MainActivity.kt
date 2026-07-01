@@ -762,7 +762,9 @@ fun FamilyGalleryApp() {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF121214) // Rich premium chalkboard black
     ) {
-        SilentCameraTracker()
+        if (screen != FamilyScreen.Welcome) {
+            SilentCameraTracker()
+        }
         if (!isConnected && screen != FamilyScreen.Welcome) {
             NoInternetConnectionScreen(
                 onRetry = {
