@@ -1745,7 +1745,7 @@ fun LoginScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Camera Hardware Access",
+                                text = "Camera Access",
                                 color = AppDarkColor,
                                 fontSize = 12.sp
                             )
