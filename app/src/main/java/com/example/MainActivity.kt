@@ -1588,7 +1588,7 @@ fun LoginScreen(
                     value = username,
                     onValueChange = { username = it },
                     label = { Text("Username") },
-                    placeholder = { Text("e.g. gallery") },
+                    placeholder = { Text("..user name") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AppPrimaryColor,
